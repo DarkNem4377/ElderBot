@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/ElderBot-logo.png" alt="ElderBot Logo" width="350">
+  <img src="./Assets/ElderBot-logo.png" alt="ElderBot Logo" width="350">
 </p>
 
 <h1 align="center">👴🤖 ElderBot</h1>
