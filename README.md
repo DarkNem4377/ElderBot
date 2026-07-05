@@ -1,23 +1,16 @@
 <p align="center">
-  <img src="assets/ElderBot-logo.png" alt="ElderBot Logo" width="400"/>
+  <img src="./assets/ElderBot-logo.png" alt="ElderBot Logo" width="350">
 </p>
 
 <h1 align="center">👴🤖 ElderBot</h1>
 
 <p align="center">
-<b>Your AI Companion. Their Peace of Mind.</b>
+  <strong>Your AI Companion. Their Peace of Mind.</strong>
 </p>
 
 <p align="center">
-An AI-powered companion helping older adults live safer, healthier, and more independent lives.
+  An AI-powered companion helping older adults live safer, healthier, and more independent lives.
 </p>
-
----
-
-
-# 👴🤖 ElderBot
-
-> **An AI-powered companion helping older adults live safer, healthier, and more independent lives.**
 
 ---
 
@@ -76,6 +69,8 @@ Built for the **🏆 AMD × Fireworks AI Hackathon 2026**, ElderBot focuses on c
 ```text
 ElderBot/
 │
+├── 📁 assets/
+│   └── 🖼️ ElderBot-logo.png
 ├── 📁 backend/
 ├── 📁 frontend/
 ├── 📁 docs/
@@ -91,7 +86,7 @@ ElderBot/
 
 This project is being built during a **6-day development sprint** for the **AMD × Fireworks AI Hackathon 2026**.
 
-Features, documentation, and screenshots will be added as development progresses.
+Features, documentation, architecture diagrams, screenshots, and setup instructions will be added as development progresses.
 
 ---
 
@@ -111,10 +106,14 @@ Features, documentation, and screenshots will be added as development progresses
 
 ## 📜 License
 
-📚 This project is currently developed for educational and hackathon purposes.
+📚 This project is currently being developed for educational and hackathon purposes.
 
 The final license will be added upon project completion.
 
 ---
 
-### ⭐ If you like this project, don't forget to star the repository!
+<div align="center">
+
+### ⭐ If you like this project, consider giving it a star! ⭐
+
+</div>
