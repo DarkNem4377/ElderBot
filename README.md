@@ -1,3 +1,19 @@
+<p align="center">
+  <img src="assets/ElderBot-logo.png" alt="ElderBot Logo" width="400"/>
+</p>
+
+<h1 align="center">👴🤖 ElderBot</h1>
+
+<p align="center">
+<b>Your AI Companion. Their Peace of Mind.</b>
+</p>
+
+<p align="center">
+An AI-powered companion helping older adults live safer, healthier, and more independent lives.
+</p>
+
+---
+
 
 # 👴🤖 ElderBot
 
