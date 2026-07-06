@@ -1,0 +1,41 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/demo:/app/data/demo:ro
+      - ./backend/app/uploads:/app/app/uploads
+      - ./backend/app/outputs:/app/app/outputs
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DEMO_DATA_DIR=/app/data/demo
+      - INFERENCE_MODE=${INFERENCE_MODE:-stub}
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:-}
+      - FIREWORKS_MODEL=${FIREWORKS_MODEL:-accounts/fireworks/models/llama-v3p1-8b-instruct}
+      - XVIEW2_DOCKER_IMAGE=${XVIEW2_DOCKER_IMAGE:-darknem-xview2-inference}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  # Build only: docker compose build ml
+  # Run inference via backend when INFERENCE_MODE=docker
+  ml:
+    build:
+      context: ./ml/inference
+      dockerfile: Dockerfile
+    image: darknem-xview2-inference
+    profiles:
+      - build-ml

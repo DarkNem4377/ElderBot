@@ -1,0 +1,15 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+node_modules/
+.next/
+data/test/
+data/_demo_staging/
+backend/outputs/
+backend/app/uploads/
+*.tar
+*.tar.gz
+backend/.venv/
+ml/xview2-baseline/
