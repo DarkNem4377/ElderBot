@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./Assets/ElderBot-logo.png" alt="ElderBot Logo" width="350">
+  <img src="./Assets/DisasterIQ-logo.png" alt="DisasterIQ-logo.png" width="350">
 </p>
 
-<h1 align="center">👴🤖 ElderBot</h1>
+<h1 align="center"> DisasterIQ</h1>
 
 <p align="center">
   <strong>Your AI Companion. Their Peace of Mind.</strong>
