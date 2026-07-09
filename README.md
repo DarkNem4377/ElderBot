@@ -290,7 +290,12 @@ Built by **Team DarkNem**
 
 ## 📜 License
 
-License to be added.
+DisasterIQ's own source code is released under the **[Apache License 2.0](LICENSE)**.
+
+Third-party components retain their own licenses — see [`NOTICE`](NOTICE) for full
+attribution. In particular, the **xView2 / xBD dataset** is licensed under
+**CC BY-NC-SA 4.0 (non-commercial use only)**, and the **xView2 baseline** model
+is under an MIT (SEI)-style license from Carnegie Mellon University.
 
 ---
 
