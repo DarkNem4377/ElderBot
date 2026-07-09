@@ -16,6 +16,16 @@
 
 ---
 
+## 🖥️ Dashboard
+
+<p align="center">
+  <img src="./Assets/dashboard.png" alt="DisasterIQ dashboard — damage overlay, priority zones, and AI situation brief" width="900">
+</p>
+
+<p align="center"><em>Before/after imagery with an AI damage overlay, ranked priority zones, a damage summary, and an AI-generated situation brief — all in one triage view.</em></p>
+
+---
+
 ## 🚨 The Problem
 
 When disasters strike, response teams need fast answers:
