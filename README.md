@@ -153,6 +153,42 @@ Export Field Damage Report
 
 ---
 
+## 📦 Dataset & Fine-Tuning
+
+DisasterIQ builds on the open **xView2 / xBD building-damage dataset** — paired
+pre- and post-disaster satellite imagery with per-building damage labels.
+
+### Getting the data
+
+The full dataset is large (train and test archives are ~10 GB each), so it is
+**not stored in this repository** (it is git-ignored). Download it directly from
+the official source:
+
+- 🔗 **Official dataset:** [xview2.org](https://xview2.org) — free registration required
+- The download provides the pre/post image pairs plus labels and target masks
+
+This repo already ships **one demo pair** (`backend/uploads/`) so the app runs
+end-to-end out of the box, no download needed.
+
+### Curate demo pairs from the full dataset
+
+After downloading and extracting the test archive to `data/test/`:
+
+```powershell
+.\scripts\curate_demo_subset.ps1
+```
+
+This copies the pairs listed in `data/demo/manifest.json` into `data/demo/`.
+
+### Fine-tuning
+
+To fine-tune the damage model on AMD GPUs (ROCm), see
+[`ml/finetune/README.md`](ml/finetune/README.md) for the full pipeline —
+extract the train archive, filter to the target hazard types with
+`scripts/prepare_train_subset.py`, then run the xView2 training workflow.
+
+---
+
 ## 📌 Use Cases
 
 DisasterIQ can support:
