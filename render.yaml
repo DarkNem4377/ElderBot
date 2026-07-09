@@ -1,0 +1,23 @@
+# Render blueprint for the DisasterIQ backend (FastAPI).
+# Deploy: Render Dashboard -> New -> Blueprint -> connect this repo.
+# The Fireworks key is NOT stored here — set it in the Render dashboard.
+services:
+  - type: web
+    name: disasteriq-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      # Real ML inference needs a GPU/heavy image (added later). Stub keeps the
+      # deployed API fast and reliable on free CPU hosting for now.
+      - key: INFERENCE_MODE
+        value: stub
+      - key: FIREWORKS_MODEL
+        value: accounts/fireworks/models/gpt-oss-120b
+      # Set the actual key in the Render dashboard (Environment tab) — never commit it.
+      - key: FIREWORKS_API_KEY
+        sync: false

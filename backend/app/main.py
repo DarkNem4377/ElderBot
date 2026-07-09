@@ -34,6 +34,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Allow any Vercel deployment (production + preview URLs) to call the API
+    # without hardcoding the exact domain. Set CORS_ORIGINS for a custom domain.
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
