@@ -8,6 +8,10 @@
   <strong>SEE DAMAGE. PRIORITIZE RELIEF. SAVE LIVES..</strong>
 </p>
 
+<p align="center">
+  <a href="https://disasteriq.vercel.app/"><strong>🔗 Try the live app → disasteriq.vercel.app</strong></a>
+</p>
+
 # 🌍 DisasterIQ
 
 ### AI-Powered Disaster Damage Intelligence for Emergency Response
@@ -23,6 +27,41 @@
 </p>
 
 <p align="center"><em>Before/after imagery with an AI damage overlay, ranked priority zones, a damage summary, and an AI-generated situation brief — all in one triage view.</em></p>
+
+---
+
+## 🚀 Access DisasterIQ
+
+DisasterIQ runs entirely in your browser — **no installation, no setup, no download.**
+
+### ▶️ Live app: **[disasteriq.vercel.app](https://disasteriq.vercel.app/)**
+
+**How to use it:**
+
+1. Open the live app in any modern browser.
+2. In the **Mission Control** panel, select a demo image pair — or upload your own before/after images.
+3. Click **⌘ Analyze Damage**.
+4. Explore the results: the AI **damage overlay**, ranked **priority zones**, the **damage summary**, and an AI-generated **situation brief**.
+5. Click **Download field report (PDF)** to export a shareable report.
+
+> ⏳ **First load may take ~30–60 seconds** while the free-tier backend wakes from sleep. After that, it's responsive.
+
+<details>
+<summary><strong>Run it locally (for developers)</strong></summary>
+
+Requires Python 3.12 and Node.js. From the repo root:
+
+```powershell
+# Backend (FastAPI, http://localhost:8000)
+.\scripts\start-backend.ps1
+
+# Frontend (Next.js, http://localhost:3000) — in a second terminal
+.\scripts\start-frontend.ps1
+```
+
+Then open **http://localhost:3000**. See [`DEPLOY.md`](DEPLOY.md) for cloud deployment.
+
+</details>
 
 ---
 

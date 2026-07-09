@@ -638,7 +638,7 @@ export default function HomePage() {
                   <span className="rounded bg-green-500 px-1.5 py-0.5 text-[10px] text-white">
                     C
                   </span>
-                  xView2 / xBD (Global)
+                  Global Disaster Imagery
                 </p>
               </div>
 
