@@ -5,15 +5,26 @@ export interface DamageCounts {
   destroyed: number;
 }
 
+export interface BuildingCounts {
+  none: number;
+  minor: number;
+  major: number;
+  destroyed: number;
+}
+
 export interface Zone {
   rank: number;
   bbox: number[];
   damage_counts: DamageCounts;
+  building_counts: BuildingCounts;
   priority_score: number;
+  centroid_lat?: number | null;
+  centroid_lng?: number | null;
 }
 
 export interface AnalysisSummary {
   total_building_pixels: number;
+  total_buildings: number;
   destroyed_pct: number;
   major_pct: number;
   minor_pct: number;
@@ -25,6 +36,8 @@ export interface AnalysisResult {
   mask_base64?: string | null;
   pair_id?: string | null;
   inference_mode: string;
+  geo_available: boolean;
+  geo_message?: string | null;
 }
 
 export interface DemoPair {
@@ -39,47 +52,152 @@ export interface BriefResponse {
   source: string;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+/*
+  Important:
+  Your backend is FastAPI on port 8000.
+  Your frontend is Next.js on port 3000.
+
+  If image URLs accidentally point to localhost:3000, the images fail.
+  So every API/demo image request must go to the backend base URL.
+*/
+const RAW_API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  "http://127.0.0.1:8000";
+
+export const API_BASE = RAW_API_BASE.replace(/\/$/, "");
+
+async function readError(res: Response, fallback: string): Promise<string> {
+  try {
+    const text = await res.text();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export async function fetchDemoPairs(): Promise<DemoPair[]> {
-  const res = await fetch(`${API_BASE}/demo/pairs`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load demo pairs");
+  const res = await fetch(`${API_BASE}/demo/pairs`, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(await readError(res, "Failed to load demo pairs"));
+  }
+
   return res.json();
 }
 
 export async function analyzeDemoPair(pairId: string): Promise<AnalysisResult> {
   const form = new FormData();
   form.append("demo_pair_id", pairId);
-  const res = await fetch(`${API_BASE}/analyze`, { method: "POST", body: form });
-  if (!res.ok) throw new Error(await res.text());
+
+  const res = await fetch(`${API_BASE}/analyze`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    throw new Error(await readError(res, "Failed to analyze demo pair"));
+  }
+
   return res.json();
 }
 
 export async function analyzeUpload(
   pre: File,
-  post: File
+  post: File,
 ): Promise<AnalysisResult> {
   const form = new FormData();
   form.append("pre_image", pre);
   form.append("post_image", post);
-  const res = await fetch(`${API_BASE}/analyze`, { method: "POST", body: form });
-  if (!res.ok) throw new Error(await res.text());
+
+  const res = await fetch(`${API_BASE}/analyze`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    throw new Error(await readError(res, "Failed to analyze uploaded images"));
+  }
+
   return res.json();
 }
 
 export async function fetchBrief(
   analysis: AnalysisResult,
-  context?: string
+  context?: string,
 ): Promise<BriefResponse> {
   const res = await fetch(`${API_BASE}/brief`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ analysis, context }),
   });
-  if (!res.ok) throw new Error(await res.text());
+
+  if (!res.ok) {
+    throw new Error(await readError(res, "Failed to generate brief"));
+  }
+
   return res.json();
 }
 
-export function demoImageUrl(filename: string): string {
-  return `${API_BASE}/demo/images/${filename}`;
+export async function fetchReportPdf(
+  analysis: AnalysisResult,
+  brief: string,
+): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/report/pdf`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ analysis, brief }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await readError(res, "Failed to generate PDF report"));
+  }
+
+  return res.blob();
+}
+
+export function demoImageUrl(filenameOrPath: string): string {
+  if (!filenameOrPath) return "";
+
+  const value = filenameOrPath.trim();
+
+  /*
+    Case 1:
+    Backend already returned a full URL.
+  */
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value;
+  }
+
+  /*
+    Case 2:
+    Backend returned:
+    /demo/images/demo_pre_disaster.png
+  */
+  if (value.startsWith("/demo/images/")) {
+    return `${API_BASE}${value}`;
+  }
+
+  /*
+    Case 3:
+    Backend returned another root-relative path.
+    This still needs to go to FastAPI, not Next.js.
+  */
+  if (value.startsWith("/")) {
+    return `${API_BASE}${value}`;
+  }
+
+  /*
+    Case 4:
+    Backend returned only:
+    demo_pre_disaster.png
+  */
+  return `${API_BASE}/demo/images/${encodeURIComponent(value)}`;
 }

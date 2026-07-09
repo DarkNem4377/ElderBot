@@ -10,15 +10,28 @@ class DamageCounts(BaseModel):
     destroyed: int = 0
 
 
+class BuildingCounts(BaseModel):
+    """Distinct buildings per damage class, from connected-component labeling."""
+
+    none: int = 0
+    minor: int = 0
+    major: int = 0
+    destroyed: int = 0
+
+
 class Zone(BaseModel):
     rank: int
     bbox: list[int] = Field(description="x, y, width, height in pixels")
     damage_counts: DamageCounts
+    building_counts: BuildingCounts
     priority_score: float
+    centroid_lat: float | None = None
+    centroid_lng: float | None = None
 
 
 class AnalysisSummary(BaseModel):
     total_building_pixels: int
+    total_buildings: int
     destroyed_pct: float
     major_pct: float
     minor_pct: float
@@ -31,6 +44,8 @@ class AnalysisResult(BaseModel):
     mask_base64: str | None = None
     pair_id: str | None = None
     inference_mode: str
+    geo_available: bool = False
+    geo_message: str | None = None
 
 
 class BriefRequest(BaseModel):
@@ -48,3 +63,8 @@ class DemoPair(BaseModel):
     disaster_type: str
     pre_image: str
     post_image: str
+
+
+class ReportRequest(BaseModel):
+    analysis: AnalysisResult
+    brief: str

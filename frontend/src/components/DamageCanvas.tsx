@@ -1,6 +1,8 @@
+// frontend/src/components/DamageCanvas.tsx
+
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalysisResult } from "@/lib/api";
 
 interface Props {
@@ -8,55 +10,422 @@ interface Props {
   analysis: AnalysisResult | null;
 }
 
+type CanvasStatus = "idle" | "loading" | "ready" | "error";
+
+const ZONE_COLORS = {
+  top: {
+    stroke: "rgba(239, 68, 68, 0.98)",
+    fill: "rgba(239, 68, 68, 0.16)",
+    label: "rgba(239, 68, 68, 0.96)",
+    glow: "rgba(239, 68, 68, 0.35)",
+  },
+  high: {
+    stroke: "rgba(249, 115, 22, 0.95)",
+    fill: "rgba(249, 115, 22, 0.12)",
+    label: "rgba(249, 115, 22, 0.96)",
+    glow: "rgba(249, 115, 22, 0.25)",
+  },
+  medium: {
+    stroke: "rgba(234, 179, 8, 0.92)",
+    fill: "rgba(234, 179, 8, 0.1)",
+    label: "rgba(234, 179, 8, 0.94)",
+    glow: "rgba(234, 179, 8, 0.18)",
+  },
+  neutral: {
+    stroke: "rgba(226, 232, 240, 0.78)",
+    fill: "rgba(226, 232, 240, 0.07)",
+    label: "rgba(15, 23, 42, 0.94)",
+    glow: "rgba(226, 232, 240, 0.12)",
+  },
+};
+
+function getZoneStyle(rank: number) {
+  if (rank === 1) return ZONE_COLORS.top;
+  if (rank === 2) return ZONE_COLORS.high;
+  if (rank === 3) return ZONE_COLORS.medium;
+  return ZONE_COLORS.neutral;
+}
+
+function getPriorityLabel(rank: number) {
+  if (rank === 1) return "Priority 1";
+  if (rank === 2) return "Priority 2";
+  if (rank === 3) return "Priority 3";
+  return "Monitor";
+}
+
+function normalizeBbox(bbox: number[]) {
+  const [x, y, third, fourth] = bbox;
+
+  /*
+    Supports both formats:
+    1. [x, y, width, height]
+    2. [x_min, y_min, x_max, y_max]
+  */
+  const width = third > x && third > 80 ? third - x : third;
+  const height = fourth > y && fourth > 80 ? fourth - y : fourth;
+
+  return {
+    x,
+    y,
+    width: Math.max(width, 1),
+    height: Math.max(height, 1),
+  };
+}
+
+function getContainedImageRect(params: {
+  containerWidth: number;
+  containerHeight: number;
+  imageWidth: number;
+  imageHeight: number;
+}) {
+  const { containerWidth, containerHeight, imageWidth, imageHeight } = params;
+
+  if (
+    containerWidth <= 0 ||
+    containerHeight <= 0 ||
+    imageWidth <= 0 ||
+    imageHeight <= 0
+  ) {
+    return {
+      x: 0,
+      y: 0,
+      width: containerWidth,
+      height: containerHeight,
+      scaleX: 1,
+      scaleY: 1,
+    };
+  }
+
+  const containerRatio = containerWidth / containerHeight;
+  const imageRatio = imageWidth / imageHeight;
+
+  let renderedWidth = containerWidth;
+  let renderedHeight = containerHeight;
+
+  if (imageRatio > containerRatio) {
+    renderedWidth = containerWidth;
+    renderedHeight = containerWidth / imageRatio;
+  } else {
+    renderedHeight = containerHeight;
+    renderedWidth = containerHeight * imageRatio;
+  }
+
+  const x = (containerWidth - renderedWidth) / 2;
+  const y = (containerHeight - renderedHeight) / 2;
+
+  return {
+    x,
+    y,
+    width: renderedWidth,
+    height: renderedHeight,
+    scaleX: renderedWidth / imageWidth,
+    scaleY: renderedHeight / imageHeight,
+  };
+}
+
 export default function DamageCanvas({ postImageUrl, analysis }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [loaded, setLoaded] = useState(false);
+
+  const [status, setStatus] = useState<CanvasStatus>("idle");
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+  const topZones = useMemo(() => {
+    return [...(analysis?.zones ?? [])]
+      .sort((a, b) => a.rank - b.rank)
+      .slice(0, 5);
+  }, [analysis]);
+
+  useEffect(() => {
+    if (!postImageUrl) {
+      setStatus("idle");
+      setImageSize({ width: 0, height: 0 });
+      return;
+    }
+
+    setStatus("loading");
+    setImageSize({ width: 0, height: 0 });
+  }, [postImageUrl]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateContainerSize = () => {
+      const rect = container.getBoundingClientRect();
+
+      setContainerSize({
+        width: Math.max(Math.round(rect.width), 1),
+        height: Math.max(Math.round(rect.height), 1),
+      });
+    };
+
+    updateContainerSize();
+
+    const resizeObserver = new ResizeObserver(updateContainerSize);
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !postImageUrl) return;
+
+    if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
+
     if (!ctx) return;
 
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx.drawImage(img, 0, 0);
+    canvas.width = containerSize.width;
+    canvas.height = containerSize.height;
 
-      if (analysis?.mask_base64) {
-        const overlay = new Image();
-        overlay.onload = () => {
-          ctx.drawImage(overlay, 0, 0);
-          if (analysis.zones) {
-            ctx.strokeStyle = "rgba(255,255,255,0.6)";
-            ctx.lineWidth = 2;
-            analysis.zones.slice(0, 5).forEach((z) => {
-              const [x, y, w, h] = z.bbox;
-              ctx.strokeRect(x, y, w, h);
-              ctx.fillStyle = "rgba(255,255,255,0.9)";
-              ctx.font = "bold 14px sans-serif";
-              ctx.fillText(`#${z.rank}`, x + 4, y + 18);
-            });
-          }
-          setLoaded(true);
-        };
-        overlay.src = `data:image/png;base64,${analysis.mask_base64}`;
-      } else {
-        setLoaded(true);
-      }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (
+      !analysis ||
+      !imageSize.width ||
+      !imageSize.height ||
+      !containerSize.width ||
+      !containerSize.height
+    ) {
+      return;
+    }
+
+    const imageRect = getContainedImageRect({
+      containerWidth: containerSize.width,
+      containerHeight: containerSize.height,
+      imageWidth: imageSize.width,
+      imageHeight: imageSize.height,
+    });
+
+    const drawZones = () => {
+      if (!analysis.zones?.length) return;
+
+      ctx.save();
+
+      topZones.forEach((zone) => {
+        const { x, y, width, height } = normalizeBbox(zone.bbox);
+        const style = getZoneStyle(zone.rank);
+        const priorityLabel = getPriorityLabel(zone.rank);
+        const damagedBuildings =
+          zone.building_counts.destroyed + zone.building_counts.major;
+
+        const drawX = imageRect.x + x * imageRect.scaleX;
+        const drawY = imageRect.y + y * imageRect.scaleY;
+        const drawWidth = width * imageRect.scaleX;
+        const drawHeight = height * imageRect.scaleY;
+
+        ctx.save();
+
+        ctx.shadowColor = style.glow;
+        ctx.shadowBlur = zone.rank === 1 ? 18 : 10;
+
+        ctx.lineWidth = zone.rank === 1 ? 4 : 3;
+        ctx.strokeStyle = style.stroke;
+        ctx.fillStyle = style.fill;
+
+        ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
+        ctx.strokeRect(drawX, drawY, drawWidth, drawHeight);
+
+        ctx.restore();
+
+        const label = `ZONE ${zone.rank}`;
+        const subLabel = `${damagedBuildings} damaged`;
+
+        const labelX = drawX + 8;
+        const labelY = drawY + 8;
+        const labelWidth = zone.rank === 1 ? 124 : 108;
+        const labelHeight = 42;
+
+        ctx.fillStyle = style.label;
+        ctx.beginPath();
+        ctx.roundRect(labelX, labelY, labelWidth, labelHeight, 8);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.98)";
+        ctx.font = "800 16px Arial, sans-serif";
+        ctx.fillText(label, labelX + 10, labelY + 18);
+
+        ctx.font = "700 10px Arial, sans-serif";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+        ctx.fillText(priorityLabel, labelX + 10, labelY + 33);
+
+        if (zone.rank === 1) {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+          ctx.font = "700 10px Arial, sans-serif";
+          ctx.fillText(subLabel, labelX + 72, labelY + 33);
+        }
+      });
+
+      ctx.restore();
     };
-    img.src = postImageUrl;
-  }, [postImageUrl, analysis]);
+
+    ctx.save();
+    ctx.fillStyle = "rgba(2, 6, 23, 0.08)";
+    ctx.fillRect(imageRect.x, imageRect.y, imageRect.width, imageRect.height);
+    ctx.restore();
+
+    if (analysis.mask_base64) {
+      let cancelled = false;
+      const overlay = new Image();
+
+      overlay.onload = () => {
+        if (cancelled) return;
+
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+        ctx.drawImage(
+          overlay,
+          imageRect.x,
+          imageRect.y,
+          imageRect.width,
+          imageRect.height,
+        );
+        ctx.restore();
+
+        drawZones();
+      };
+
+      overlay.onerror = () => {
+        if (cancelled) return;
+        drawZones();
+      };
+
+      overlay.src = `data:image/png;base64,${analysis.mask_base64}`;
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    drawZones();
+  }, [analysis, containerSize, imageSize, topZones]);
+
+  const handleImageLoad = () => {
+    const image = imageRef.current;
+
+    if (!image) return;
+
+    setImageSize({
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    });
+
+    setStatus("ready");
+  };
+
+  const handleImageError = () => {
+    setStatus("error");
+    setImageSize({ width: 0, height: 0 });
+  };
+
+  const showLoading = status === "loading";
+  const showError = status === "error";
+  const showAnalysisBadge = status === "ready" && Boolean(analysis);
+  const showReadyStatus = status === "ready" && Boolean(analysis);
 
   return (
-    <div className="relative rounded-lg overflow-hidden border border-slate-700 bg-slate-900">
-      <canvas ref={canvasRef} className="max-w-full h-auto w-full" />
-      {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 text-slate-400">
-          Loading imagery...
+    <div
+      ref={containerRef}
+      className="relative h-full min-h-[540px] overflow-hidden bg-slate-950"
+    >
+      {postImageUrl ? (
+        <img
+          ref={imageRef}
+          src={postImageUrl}
+          alt="Post-disaster satellite imagery"
+          className="absolute inset-0 h-full w-full object-contain"
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+          draggable={false}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950">
+          <p className="text-sm text-slate-500">No post-disaster image loaded.</p>
+        </div>
+      )}
+
+      <canvas
+        ref={canvasRef}
+        className="pointer-events-none absolute inset-0 h-full w-full"
+      />
+
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/10 via-transparent to-slate-950/20" />
+
+      {showAnalysisBadge && (
+        <div className="absolute left-4 top-16 z-10 flex items-center gap-2 rounded-full border border-red-500/40 bg-red-950/70 px-3 py-1.5 shadow-xl shadow-black/25 backdrop-blur">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-red-400 shadow-[0_0_12px_rgba(248,113,113,0.9)]" />
+
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-red-100">
+            Damage Mask Active
+          </span>
+        </div>
+      )}
+
+      {showLoading && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-diq-bg/85 backdrop-blur-sm">
+          <div className="rounded-2xl border border-diq-line/60 bg-diq-panel/85 px-7 py-6 text-center shadow-2xl shadow-black/40">
+            <div className="mx-auto h-9 w-9 animate-spin rounded-full border-2 border-diq-line border-t-diq-orange" />
+
+            <p className="mt-4 font-label text-xs uppercase tracking-[0.18em] text-slate-200">
+              Loading imagery
+            </p>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Rendering post-disaster view...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {showError && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-diq-bg/90">
+          <div className="max-w-sm rounded-2xl border border-red-500/40 bg-red-950/30 px-6 py-5 text-center shadow-2xl shadow-black/40">
+            <p className="text-sm font-bold text-red-200">
+              Could not load post-disaster image.
+            </p>
+
+            <p className="mt-2 text-xs leading-5 text-red-200/70">
+              The backend image route may work directly, but the frontend image
+              URL being passed into this component is still failing. Check the
+              final resolved URL in the browser network tab.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {showReadyStatus && (
+        <div className="absolute bottom-4 left-4 right-20 z-10 rounded-xl border border-diq-line/50 bg-slate-950/78 px-4 py-3 shadow-2xl shadow-black/30 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                Overlay Status
+              </p>
+
+              <p className="text-sm font-semibold text-slate-100">
+                Damage mask rendered successfully
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-green-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-green-300">
+                Active
+              </span>
+
+              <span className="rounded-full bg-diq-orange/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-diq-orange">
+                Top {topZones.length || 0} Zones
+              </span>
+
+              <span className="rounded-full bg-blue-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-blue-300">
+                AI Classified
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </div>

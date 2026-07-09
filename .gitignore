@@ -8,8 +8,16 @@ node_modules/
 data/test/
 data/_demo_staging/
 backend/outputs/
-backend/app/uploads/
+# Runtime upload dir: ignore generated per-analysis job folders, keep the demo pair.
+backend/uploads/*
+!backend/uploads/demo_pre_disaster.png
+!backend/uploads/demo_post_disaster.png
 *.tar
 *.tar.gz
+# Large dataset archives (xView2) — keep on disk for fine-tuning, never commit.
+*.zip
 backend/.venv/
 ml/xview2-baseline/
+# Regenerable caches
+*.tsbuildinfo
+.pytest_cache/

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- DisasterIQ mark: navy D + orange Q magnifier, lens shows triage quadrants -->
+  <!-- Brand hex source of truth: tailwind.config.js (diq.navy / diq.orange / diq.red) -->
+  <path d="M14 9 H27 A21 21 0 0 1 27 51 H14 Z" stroke="#4C6BA8" stroke-width="6" stroke-linejoin="round"/>
+  <clipPath id="lens"><circle cx="37" cy="30" r="13.5"/></clipPath>
+  <g clip-path="url(#lens)">
+    <rect x="23" y="16" width="14" height="28" fill="#3E8E4E"/>
+    <rect x="37" y="16" width="14" height="14" fill="#E8A13C"/>
+    <rect x="37" y="30" width="14" height="14" fill="#C0392B"/>
+    <path d="M23 16 H51 M37 16 V44 M23 30 H51" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.2"/>
+  </g>
+  <circle cx="37" cy="30" r="17" stroke="#F08A1D" stroke-width="6"/>
+  <line x1="49.5" y1="42.5" x2="58.5" y2="51.5" stroke="#DC3B2A" stroke-width="7" stroke-linecap="round"/>
+</svg>

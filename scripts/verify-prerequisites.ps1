@@ -23,12 +23,13 @@ if (Test-Path $py) {
 }
 
 # Backend venv
-$venvPy = "D:\AMD\backend\.venv\Scripts\python.exe"
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$venvPy = Join-Path $repoRoot "backend\.venv\Scripts\python.exe"
 if (Test-Path $venvPy) {
     $numpyOk = & $venvPy -c "import numpy" 2>$null; if ($LASTEXITCODE -eq 0) {
         Write-Host "[OK] Backend venv with numpy" -ForegroundColor Green
     } else {
-        Write-Host "[WARN] Backend venv missing deps. Run: cd D:\AMD\backend; .\.venv\Scripts\pip install -r requirements.txt" -ForegroundColor Yellow
+        Write-Host "[WARN] Backend venv missing deps. Run: cd $repoRoot\backend; .\.venv\Scripts\pip install -r requirements.txt" -ForegroundColor Yellow
     }
 } else {
     Write-Host "[WARN] Backend venv not created. Run: .\scripts\start-backend.ps1" -ForegroundColor Yellow

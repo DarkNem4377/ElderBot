@@ -11,11 +11,12 @@ from app.config import settings
 from app.schemas import BriefResponse
 
 SYSTEM_PROMPT = """You are a disaster response analyst. You receive a JSON object with
-deterministic damage zone scores from satellite imagery analysis.
+deterministic per-zone building damage counts and priority scores from satellite
+imagery analysis.
 
 Rules:
 - Narrate the situation in plain language for emergency coordinators.
-- Reference zone ranks and damage counts exactly as provided.
+- Reference zone ranks and building counts exactly as provided.
 - Do NOT change rankings, scores, or invent additional damage data.
 - Keep the brief under 250 words.
 - Mention priority zones first and recommend where to deploy resources first.
@@ -33,7 +34,7 @@ def _stub_brief(analysis: dict[str, Any], context: str | None) -> str:
         lines.append(f"Context: {context}")
         lines.append("")
     lines.append(
-        f"Overall: {summary.get('total_building_pixels', 0)} building pixels assessed. "
+        f"Overall: {summary.get('total_buildings', 0)} buildings assessed. "
         f"Destroyed: {summary.get('destroyed_pct', 0)}%, "
         f"Major: {summary.get('major_pct', 0)}%, "
         f"Minor: {summary.get('minor_pct', 0)}%."
@@ -41,11 +42,11 @@ def _stub_brief(analysis: dict[str, Any], context: str | None) -> str:
     lines.append("")
     lines.append("Priority zones (pre-ranked by ML):")
     for z in zones:
-        dc = z.get("damage_counts", {})
+        bc = z.get("building_counts", {})
         lines.append(
             f"  Zone #{z.get('rank')}: score {z.get('priority_score')} — "
-            f"destroyed={dc.get('destroyed', 0)}, major={dc.get('major', 0)}, "
-            f"minor={dc.get('minor', 0)}, undamaged={dc.get('none', 0)}"
+            f"destroyed={bc.get('destroyed', 0)}, major={bc.get('major', 0)}, "
+            f"minor={bc.get('minor', 0)}, undamaged={bc.get('none', 0)} buildings"
         )
     lines.append("")
     lines.append(
@@ -66,7 +67,9 @@ async def generate_brief(analysis: dict[str, Any], context: str | None = None) -
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
-        "max_tokens": 512,
+        # gpt-oss-120b is a reasoning model: reasoning tokens share this budget,
+        # so keep enough headroom that the <250-word brief is never truncated.
+        "max_tokens": 1500,
         "temperature": 0.3,
     }
     headers = {
@@ -81,5 +84,10 @@ async def generate_brief(analysis: dict[str, Any], context: str | None = None) -
         )
         resp.raise_for_status()
         data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        return BriefResponse(brief=content.strip(), source="fireworks")
+        message = data["choices"][0]["message"]
+        # Reasoning models can leave `content` null if they spend the whole
+        # budget reasoning; fall back to the stub rather than crashing.
+        content = (message.get("content") or "").strip()
+        if not content:
+            return BriefResponse(brief=_stub_brief(analysis, context), source="stub")
+        return BriefResponse(brief=content, source="fireworks")

@@ -18,8 +18,12 @@ Verify anytime: `.\scripts\verify-prerequisites.ps1`
 Build when needed (first run ~15–30 min):
 
 ```powershell
-cd D:\AMD
+cd E:\DisasterIQ
 docker compose --profile build-ml build ml
 ```
 
 Then set `INFERENCE_MODE=docker` in `.env` for real baseline inference.
+
+Note: the backend shells out to `docker run` for ML inference using host
+filesystem paths, so run the backend on the host (`.\scripts\start-backend.ps1`)
+rather than inside docker-compose when `INFERENCE_MODE=docker`.
