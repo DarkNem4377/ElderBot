@@ -1,0 +1,255 @@
+<p align="center">
+  <img src="./Assets/DisasterIQ-logo.png" alt="DisasterIQ-logo.png" width="350">
+</p>
+
+<h1 align="center"> DisasterIQ</h1>
+
+<p align="center">
+  <strong>SEE DAMAGE. PRIORITIZE RELIEF. SAVE LIVES..</strong>
+</p>
+
+# 🌍 DisasterIQ
+
+### AI-Powered Disaster Damage Intelligence for Emergency Response
+
+**DisasterIQ transforms before-and-after satellite or aerial imagery into actionable disaster-response intelligence — helping relief teams identify damaged areas, prioritize response zones, and generate rapid field reports.**
+
+---
+
+## 🚨 The Problem
+
+When disasters strike, response teams need fast answers:
+
+- Where is the damage most severe?
+- Which zones should rescue teams inspect first?
+- How many structures appear damaged or destroyed?
+- Where should limited relief resources be sent immediately?
+
+Traditional damage assessment often depends on manual ground surveys, which can be slow, dangerous, and incomplete — especially after floods, earthquakes, wildfires, hurricanes, and other large-scale disasters.
+
+**DisasterIQ is built to reduce that delay.**
+
+---
+
+## 🧠 What DisasterIQ Does
+
+DisasterIQ is an AI-powered disaster triage dashboard that analyzes before-and-after imagery and converts it into clear emergency-response insights.
+
+It can:
+
+- 🛰️ Compare pre-disaster and post-disaster imagery
+- 🏚️ Detect visible damage patterns
+- 🎯 Classify damage severity across affected zones
+- 🗺️ Display a visual damage overlay
+- 📊 Generate damage summaries
+- 📍 Rank priority response zones
+- 🧾 Produce an AI-assisted situation brief
+- 📄 Export a field-ready disaster damage report
+
+---
+
+## 🌐 Built for Global Disaster Response
+
+DisasterIQ is not limited to one country or one disaster type.
+
+It is designed for global disaster scenarios where before-and-after imagery is available, including:
+
+- 🌊 Floods
+- 🌎 Earthquakes
+- 🔥 Wildfires
+- 🌀 Hurricanes
+- ⛰️ Landslides
+- 🌪️ Severe storms
+
+Example deployment scenarios include Pakistan floods, Venezuela earthquakes, Turkey/Syria earthquakes, wildfire damage assessments, hurricane-hit coastal regions, and other international disaster-response operations.
+
+---
+
+## ✨ Key Features
+
+### 🛰️ Before / After Image Analysis
+
+Upload or load paired imagery from before and after a disaster event.
+
+### 🎨 Visual Damage Overlay
+
+Damage results are displayed directly over the affected area, making it easier to understand the scale and location of destruction.
+
+### 📊 Damage Summary
+
+The dashboard summarizes affected structures and damage severity in a clear visual format.
+
+### 📍 Priority Zone Ranking
+
+DisasterIQ ranks zones based on severity, helping emergency teams decide where to respond first.
+
+### 🧾 Situation Brief
+
+The system generates a concise emergency-response brief that explains the damage pattern and recommended next steps.
+
+### 📄 Field Report Export
+
+Users can export a structured disaster damage report for response teams, coordinators, and stakeholders.
+
+---
+
+## 🎯 Damage Severity Levels
+
+| Severity | Description |
+|---|---|
+| 🟢 No Damage | Area or structure appears largely unaffected |
+| 🟡 Minor Damage | Light visible damage or limited disruption |
+| 🟠 Major Damage | Significant visible damage requiring urgent inspection |
+| 🔴 Destroyed | Severe destruction or likely structural collapse |
+
+---
+
+## 🖥️ Demo Workflow
+
+```text
+Load or Upload Disaster Image Pair
+              ↓
+View Before / After Comparison
+              ↓
+Run Damage Analysis
+              ↓
+Display Damage Overlay
+              ↓
+Generate Damage Summary
+              ↓
+Rank Priority Zones
+              ↓
+Create Situation Brief
+              ↓
+Export Field Damage Report
+```
+
+---
+
+## 🧩 Technology Stack
+
+### Frontend
+
+- ⚛️ Next.js
+- 🟦 TypeScript
+- 🎨 Tailwind CSS
+- 🖼️ Interactive disaster dashboard
+- 📊 Visual damage summary and zone ranking
+
+### Backend
+
+- 🐍 Python
+- ⚡ FastAPI
+- 🖼️ Image processing pipeline
+- 📡 REST API
+- 📄 Report generation
+
+### AI & Acceleration
+
+- 🔥 PyTorch
+- ⚙️ ROCm-compatible inference workflow
+- 🚀 AMD Instinct GPU target
+- 🤖 Fireworks AI support for situation brief generation
+
+---
+
+## 📌 Use Cases
+
+DisasterIQ can support:
+
+- 🚑 Emergency response coordination
+- 🏚️ Building damage assessment
+- 🌍 Humanitarian relief planning
+- 🛰️ Satellite imagery analysis
+- 🧭 Disaster zone prioritization
+- 📋 Rapid field reporting
+- 🏛️ Government and NGO response planning
+
+---
+
+## 🏆 Hackathon Context
+
+DisasterIQ was developed for the **AMD Developer Hackathon: ACT II — Unicorn Track**.
+
+The project focuses on practical disaster-response AI, combining computer vision, geospatial reasoning, emergency triage logic, and AMD-oriented acceleration.
+
+---
+
+## ⚡ Why AMD
+
+DisasterIQ is designed around an AMD-ready AI workflow:
+
+- 🚀 AMD Instinct GPU target for accelerated inference
+- ⚙️ ROCm-compatible PyTorch workflow
+- 🔥 GPU-backed model execution path
+- 🤖 Fireworks AI integration for AI-generated response briefs
+
+The goal is to demonstrate how AMD-powered AI infrastructure can support high-impact emergency-response applications.
+
+---
+
+## 📊 Current Capabilities
+
+DisasterIQ currently supports:
+
+- ✅ Disaster dashboard interface
+- ✅ Before / after imagery display
+- ✅ Demo image pair loading
+- ✅ Damage analysis workflow
+- ✅ Visual damage overlay
+- ✅ Damage summary cards
+- ✅ Priority zone ranking
+- ✅ AI-style situation brief generation
+- ✅ PDF field report export
+- ✅ Frontend and backend integration
+
+---
+
+## 📄 Report Output
+
+DisasterIQ can generate a field-ready report containing:
+
+- Disaster image pair information
+- Damage severity summary
+- Priority zone ranking
+- Situation brief
+- Response recommendations
+- Field coordination notes
+
+---
+
+## 🌟 Project Vision
+
+DisasterIQ is built around a simple idea:
+
+> In a disaster, faster intelligence can lead to faster response.
+
+By turning disaster imagery into structured response information, DisasterIQ aims to help emergency teams move from raw visuals to real decisions faster.
+
+---
+
+## ⚠️ Disclaimer
+
+DisasterIQ is a hackathon prototype and decision-support tool.
+
+It is not a replacement for professional disaster assessment, satellite imagery experts, structural engineers, or verified field reports. All AI-generated outputs should be reviewed and validated before real-world operational use.
+
+---
+
+## 👥 Team
+
+Built by **Team DarkNem**
+
+---
+
+## 📜 License
+
+License to be added.
+
+---
+
+## 💡 Final Message
+
+**DisasterIQ helps turn disaster imagery into emergency response intelligence.**
+
+### See damage. Prioritize relief. Save lives.
