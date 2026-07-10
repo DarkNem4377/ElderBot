@@ -57,6 +57,32 @@ def test_priority_score_empty():
     assert priority_score(BuildingCounts()) == 0.0
 
 
+def test_priority_score_spans_zero_to_one_hundred():
+    assert priority_score(BuildingCounts(none=10)) == 0.0
+    assert priority_score(BuildingCounts(destroyed=10)) == 100.0
+
+
+def test_priority_score_ignores_undamaged_buildings():
+    """Intact structures must dilute, never inflate, a zone's priority."""
+    damage_only = BuildingCounts(major=2)
+    with_intact_neighbours = BuildingCounts(none=8, major=2)
+    assert priority_score(with_intact_neighbours) < priority_score(damage_only)
+
+
+@pytest.mark.parametrize(
+    "counts",
+    [
+        BuildingCounts(),
+        BuildingCounts(none=5),
+        BuildingCounts(minor=3, major=1),
+        BuildingCounts(none=1, minor=1, major=1, destroyed=1),
+        BuildingCounts(destroyed=7),
+    ],
+)
+def test_priority_score_always_in_range(counts):
+    assert 0.0 <= priority_score(counts) <= 100.0
+
+
 def test_score_mask_end_to_end(tmp_path):
     mask = np.zeros((40, 40), dtype=np.uint8)
     mask[2:10, 2:10] = 2  # minor buildings, top-left grid cell

@@ -36,7 +36,9 @@ OVERLAY_COLORS = {
     4: (239, 68, 68, 180),    # red - destroyed
 }
 
-WEIGHTS = {1: 1.0, 2: 2.0, 3: 3.5, 4: 5.0}
+# Undamaged buildings carry no weight — they must not raise a zone's priority.
+WEIGHTS = {2: 2.0, 3: 3.5, 4: 5.0}
+_MAX_WEIGHT = WEIGHTS[4]
 
 # 8-connectivity: two same-class pixels count as one building if they touch
 # on an edge or a corner.
@@ -46,6 +48,28 @@ _CONNECTIVITY = np.ones((3, 3), dtype=np.uint8)
 def load_mask(path: Path) -> np.ndarray:
     with Image.open(path) as img:
         return np.array(img.convert("L"), dtype=np.uint8)
+
+
+def load_confidence(path: Path, mask_shape: tuple[int, ...]) -> np.ndarray:
+    """Load the per-pixel confidence map emitted alongside a pytorch mask."""
+    confidence = np.load(path)
+    if confidence.shape != mask_shape:
+        raise ValueError(
+            f"Confidence shape {confidence.shape} does not match mask shape {mask_shape}"
+        )
+    return confidence
+
+
+def confidence_for_region(confidence: np.ndarray, mask_region: np.ndarray) -> float | None:
+    """Mean predicted-class probability across a zone's building pixels.
+
+    Background dominates most tiles, so averaging over the whole region would
+    report the model's confidence that empty ground is empty.
+    """
+    building = mask_region > 0
+    if not building.any():
+        return None
+    return round(float(confidence[building].mean()), 4)
 
 
 def counts_for_region(mask: np.ndarray) -> DamageCounts:
@@ -77,21 +101,34 @@ def building_counts_for_region(mask: np.ndarray) -> BuildingCounts:
 
 
 def priority_score(counts: BuildingCounts) -> float:
+    """Zone severity on a 0-100 scale.
+
+    The denominator is the worst case the zone could have reached — every
+    building destroyed — so a zone of intact structures scores 0, a totally
+    destroyed zone scores 100, and scores stay comparable across zones
+    holding different numbers of buildings.
+    """
     total = counts.none + counts.minor + counts.major + counts.destroyed
     if total == 0:
         return 0.0
     weighted = (
-        counts.none * WEIGHTS[1]
-        + counts.minor * WEIGHTS[2]
+        counts.minor * WEIGHTS[2]
         + counts.major * WEIGHTS[3]
         + counts.destroyed * WEIGHTS[4]
     )
-    return round((weighted / total) * 100, 2)
+    return round((weighted / (total * _MAX_WEIGHT)) * 100, 2)
 
 
-def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> AnalysisResult:
+def score_mask(
+    mask_path: Path,
+    grid_rows: int = 4,
+    grid_cols: int = 4,
+    confidence_path: Path | None = None,
+) -> AnalysisResult:
     mask = load_mask(mask_path)
     h, w = mask.shape
+
+    confidence = load_confidence(confidence_path, mask.shape) if confidence_path else None
     cell_h = max(1, h // grid_rows)
     cell_w = max(1, w // grid_cols)
 
@@ -108,6 +145,11 @@ def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> Analy
             if total_building_px == 0:
                 continue
             building_counts = building_counts_for_region(region)
+            zone_confidence = (
+                confidence_for_region(confidence[y0:y1, x0:x1], region)
+                if confidence is not None
+                else None
+            )
             zones.append(
                 Zone(
                     rank=0,
@@ -115,6 +157,7 @@ def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> Analy
                     damage_counts=counts,
                     building_counts=building_counts,
                     priority_score=priority_score(building_counts),
+                    confidence=zone_confidence,
                 )
             )
 

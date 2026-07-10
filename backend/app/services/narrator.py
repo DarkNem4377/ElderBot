@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import httpx
 
 from app.config import settings
 from app.schemas import BriefResponse
+
+logger = logging.getLogger(__name__)
+
+MAX_CONTEXT_CHARS = 2000
+
+# Never ship these to the LLM: the overlay is a full-size base64 PNG that would
+# dwarf the analysis JSON in the prompt, and the mask path is a server-local
+# detail the model has no use for.
+_PROMPT_EXCLUDED_KEYS = frozenset({"mask_base64", "mask_path"})
 
 SYSTEM_PROMPT = """You are a disaster response analyst. You receive a JSON object with
 deterministic per-zone building damage counts and priority scores from satellite
@@ -60,7 +70,11 @@ async def generate_brief(analysis: dict[str, Any], context: str | None = None) -
     if not settings.fireworks_api_key:
         return BriefResponse(brief=_stub_brief(analysis, context), source="stub")
 
-    user_content = json.dumps({"analysis": analysis, "context": context}, indent=2)
+    if context is not None and len(context) > MAX_CONTEXT_CHARS:
+        context = context[:MAX_CONTEXT_CHARS]
+
+    prompt_analysis = {k: v for k, v in analysis.items() if k not in _PROMPT_EXCLUDED_KEYS}
+    user_content = json.dumps({"analysis": prompt_analysis, "context": context}, indent=2)
     payload = {
         "model": settings.fireworks_model,
         "messages": [
@@ -76,18 +90,23 @@ async def generate_brief(analysis: dict[str, Any], context: str | None = None) -
         "Authorization": f"Bearer {settings.fireworks_api_key}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            "https://api.fireworks.ai/inference/v1/chat/completions",
-            json=payload,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        message = data["choices"][0]["message"]
-        # Reasoning models can leave `content` null if they spend the whole
-        # budget reasoning; fall back to the stub rather than crashing.
-        content = (message.get("content") or "").strip()
-        if not content:
-            return BriefResponse(brief=_stub_brief(analysis, context), source="stub")
-        return BriefResponse(brief=content, source="fireworks")
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                "https://api.fireworks.ai/inference/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            message = data["choices"][0]["message"]
+            # Reasoning models can leave `content` null if they spend the whole
+            # budget reasoning; fall back to the stub rather than crashing.
+            content = (message.get("content") or "").strip()
+    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+        logger.warning("Fireworks narration failed, serving stub brief: %s", exc)
+        return BriefResponse(brief=_stub_brief(analysis, context), source="fireworks-fallback")
+
+    if not content:
+        return BriefResponse(brief=_stub_brief(analysis, context), source="fireworks-fallback")
+    return BriefResponse(brief=content, source="fireworks")

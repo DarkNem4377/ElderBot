@@ -21,10 +21,16 @@ class BuildingCounts(BaseModel):
 
 class Zone(BaseModel):
     rank: int
-    bbox: list[int] = Field(description="x, y, width, height in pixels")
+    bbox: list[int] = Field(
+        description="x, y, width, height in pixels", min_length=4, max_length=4
+    )
     damage_counts: DamageCounts
     building_counts: BuildingCounts
     priority_score: float
+    confidence: float | None = Field(
+        default=None,
+        description="Mean predicted-class probability over building pixels (pytorch mode only)",
+    )
     centroid_lat: float | None = None
     centroid_lng: float | None = None
 
@@ -55,7 +61,7 @@ class BriefRequest(BaseModel):
 
 class BriefResponse(BaseModel):
     brief: str
-    source: str  # fireworks | stub
+    source: str  # fireworks | fireworks-fallback | stub
 
 
 class DemoPair(BaseModel):

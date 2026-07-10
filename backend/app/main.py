@@ -5,13 +5,16 @@ import shutil
 import uuid
 from pathlib import Path
 
+import anyio
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
+from PIL import Image, UnidentifiedImageError
 
 from app.config import settings
 from app.security import rate_limit, require_access_token
 from app.schemas import AnalysisResult, BriefRequest, BriefResponse, DemoPair, ReportRequest
+from app.services.cleanup import cleanup_old_jobs
 from app.services.georef import NO_GEO_MESSAGE, fit_geo_transform
 from app.services.inference import (
     list_demo_pairs,
@@ -24,6 +27,11 @@ from app.services.report import generate_report_pdf
 from app.services.scoring import score_mask
 
 _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+ALLOWED_IMAGE_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/tiff"}
+)
 
 app = FastAPI(
     title="Disaster Damage Triage API",
@@ -67,55 +75,63 @@ def demo_image(filename: str) -> FileResponse:
     return FileResponse(path)
 
 
-@app.post(
-    "/analyze",
-    response_model=AnalysisResult,
-    dependencies=[Depends(rate_limit), Depends(require_access_token)],
-)
-async def analyze(
-    pre_image: UploadFile | None = File(None),
-    post_image: UploadFile | None = File(None),
-    demo_pair_id: str | None = Form(None),
+def _validate_upload(upload: UploadFile) -> None:
+    """Reject obviously bad uploads before a single byte reaches disk."""
+    if upload.content_type and upload.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported image type: {upload.content_type}"
+        )
+    if upload.size is not None and upload.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Image exceeds the 25 MB upload limit")
+
+
+def _save_upload(upload: UploadFile, dest: Path, job_dir: Path) -> None:
+    """Stream an upload to disk, enforcing the size cap as we go.
+
+    The declared Content-Length is advisory, so the cap is re-checked per chunk
+    and the whole job directory is discarded on any failure — a rejected upload
+    must never leave a partial file behind.
+    """
+    written = 0
+    try:
+        with dest.open("wb") as f:
+            while chunk := upload.file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=400, detail="Image exceeds the 25 MB upload limit"
+                    )
+                f.write(chunk)
+    except HTTPException:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+
+    try:
+        with Image.open(dest) as img:
+            img.verify()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from exc
+
+
+def _run_analysis_pipeline(
+    pre_path: Path,
+    post_path: Path,
+    out_dir: Path,
+    demo_pair_id: str | None,
 ) -> AnalysisResult:
-    job_id = uuid.uuid4().hex
-    job_dir = settings.upload_dir / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-    out_dir = settings.output_dir / job_id
+    """Inference, scoring and geo enrichment — all blocking, all CPU-bound.
 
-    if demo_pair_id:
-        try:
-            pair = resolve_demo_pair(demo_pair_id)
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Demo pair not found: {demo_pair_id}",
-            )
-
-        pre_path = Path(pair["pre_path"])
-        post_path = Path(pair["post_path"])
-
-    else:
-        if pre_image is None or post_image is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Provide pre_image and post_image uploads, or demo_pair_id",
-            )
-
-        pre_path = job_dir / Path(pre_image.filename or "pre.png").name
-        post_path = job_dir / Path(post_image.filename or "post.png").name
-
-        with pre_path.open("wb") as f:
-            shutil.copyfileobj(pre_image.file, f)
-
-        with post_path.open("wb") as f:
-            shutil.copyfileobj(post_image.file, f)
-
-    mask_path, mode = run_inference(pre_path, post_path, out_dir)
+    Kept synchronous and run on a worker thread so a single analysis cannot
+    stall the event loop for every other request.
+    """
+    mask_path, mode, confidence_path = run_inference(pre_path, post_path, out_dir)
 
     result = score_mask(
         mask_path,
         grid_rows=settings.grid_rows,
         grid_cols=settings.grid_cols,
+        confidence_path=confidence_path,
     )
 
     result.inference_mode = mode
@@ -138,6 +154,60 @@ async def analyze(
 
 
 @app.post(
+    "/analyze",
+    response_model=AnalysisResult,
+    dependencies=[Depends(rate_limit), Depends(require_access_token)],
+)
+async def analyze(
+    pre_image: UploadFile | None = File(None),
+    post_image: UploadFile | None = File(None),
+    demo_pair_id: str | None = Form(None),
+) -> AnalysisResult:
+    cleanup_old_jobs(settings.upload_dir, settings.output_dir)
+
+    job_id = uuid.uuid4().hex
+    out_dir = settings.output_dir / job_id
+
+    if demo_pair_id:
+        try:
+            pair = resolve_demo_pair(demo_pair_id)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Demo pair not found: {demo_pair_id}",
+            )
+
+        pre_path = Path(pair["pre_path"])
+        post_path = Path(pair["post_path"])
+
+    else:
+        if pre_image is None or post_image is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide pre_image and post_image uploads, or demo_pair_id",
+            )
+
+        _validate_upload(pre_image)
+        _validate_upload(post_image)
+
+        job_dir = settings.upload_dir / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        pre_path = job_dir / (Path(pre_image.filename or "pre.png").name or "pre.png")
+        post_path = job_dir / (Path(post_image.filename or "post.png").name or "post.png")
+
+        _save_upload(pre_image, pre_path, job_dir)
+        _save_upload(post_image, post_path, job_dir)
+
+    try:
+        return await anyio.to_thread.run_sync(
+            _run_analysis_pipeline, pre_path, post_path, out_dir, demo_pair_id
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post(
     "/brief",
     response_model=BriefResponse,
     dependencies=[Depends(rate_limit), Depends(require_access_token)],
@@ -151,7 +221,9 @@ async def brief(body: BriefRequest) -> BriefResponse:
     dependencies=[Depends(rate_limit), Depends(require_access_token)],
 )
 async def report_pdf(body: ReportRequest) -> Response:
-    pdf_bytes = generate_report_pdf(body.analysis, body.brief)
+    pdf_bytes = await anyio.to_thread.run_sync(
+        generate_report_pdf, body.analysis, body.brief
+    )
 
     raw_name = body.analysis.pair_id or "upload"
     safe_name = _SAFE_FILENAME_RE.sub("_", raw_name).strip("_") or "upload"
