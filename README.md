@@ -243,6 +243,15 @@ The backend picks its damage model from `INFERENCE_MODE` in `.env`:
 Only `pytorch` produces class probabilities, so `confidence` is reported for
 that mode alone. See [`ml/README.md`](ml/README.md) for details.
 
+`docker` mode requires building the baseline image first:
+
+```powershell
+docker compose --profile build-ml build ml
+```
+
+The first `docker`-mode analysis is slow (~2 min: TF 1.15 cold start plus two
+models), so `stub` remains the default for a responsive live demo.
+
 ### Fine-tuning
 
 Fine-tuning runs on a **PyTorch** fork of xView2, not the TF 1.15 baseline —
