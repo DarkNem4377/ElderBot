@@ -27,11 +27,12 @@ RUN mkdir -p ~/code/xview-2/ ~/submission/ ~/output/
 # Pin opencv-python to a version that ships a prebuilt cp36 manylinux wheel and
 # force pip to prefer binaries, so imgaug's opencv dependency is never compiled
 # from source (that source build takes 45+ min on limited CPU).
-# keras must be pinned to 2.3.1 — the last multi-backend release. Newer keras
-# (2.6+) imports tf.__internal__ (a TF 2.x symbol) and crashes on this TF 1.15
-# base; older keras (2.2.x) predates the `callbacks` arg that the baseline's
-# damage_inference.py passes to predict_generator. h5py<3 avoids the
-# "'str' has no attribute 'decode'" error when loading the old-format .h5 weights.
+# keras is pinned to 2.3.1, the last multi-backend release: keras 2.6+ imports
+# tf.__internal__ (a TF 2.x symbol) and crashes on this TF 1.15 base. 2.2.x also
+# works — its predict_generator already accepts the `callbacks` argument the
+# baseline's damage_inference.py passes — so this pin is a safe upper bound, not
+# a lower one. h5py<3 avoids the "'str' has no attribute 'decode'" error when
+# loading the old-format .h5 weights.
 RUN pip install --user --prefer-binary \
     'opencv-python==4.5.5.64' 'keras==2.3.1' 'h5py<3' \
     matplotlib tqdm libtiff scipy 'Pillow<10' scikit-image \

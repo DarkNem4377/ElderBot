@@ -1,0 +1,49 @@
+# Fine-tuning config — DisasterIQ hackathon subset.
+#
+# Paths are CONTAINER paths: mount host data at /data and results at /results.
+# Two stages, run in order:
+#   1. localization — learn to segment buildings from the pre-disaster image.
+#   2. damage       — siamese head over (pre, post), initialized from stage 1.
+# Stage 2 reads stage 1's checkpoint via `ckpt_pre`, so `results_dir` in
+# localization and `ckpt_pre` in damage must agree.
+
+data:
+  train_dir: /data/train_subset
+  test_dir: /data/test
+  results_root: /results
+
+# xBD covers 19 disasters. We train on the hazard types the demo shows, which
+# keeps the subset small enough to fine-tune inside a hackathon GPU budget.
+subset_prefixes:
+  - mexico-earthquake
+  - midwest-flooding
+  - socal-fire
+  - santa-rosa-wildfire
+
+localization:
+  type: pre
+  encoder: resnet50
+  loss_str: ce+dice
+  epochs: 10
+  batch_size: 8
+  val_batch_size: 8
+  gpus: 1
+  results_dir: /results/loc
+
+damage:
+  type: post
+  dmg_model: siamese
+  encoder: resnet50
+  # Damage classes are heavily imbalanced (most buildings survive), so focal
+  # down-weights the easy majority and dice keeps the rare classes from
+  # vanishing into the background term.
+  loss_str: focal+dice
+  epochs: 20
+  batch_size: 4
+  val_batch_size: 4
+  gpus: 1
+  results_dir: /results/dmg
+  ckpt_pre: /results/loc/checkpoints/best.ckpt
+
+eval:
+  results_dir: /results/eval
