@@ -18,6 +18,9 @@ export interface Zone {
   damage_counts: DamageCounts;
   building_counts: BuildingCounts;
   priority_score: number;
+  /** Mean predicted-class probability over the zone's building pixels.
+   *  Only the `pytorch` inference mode produces probabilities; null otherwise. */
+  confidence?: number | null;
   centroid_lat?: number | null;
   centroid_lng?: number | null;
 }
@@ -52,6 +55,12 @@ export interface BriefResponse {
   source: string;
 }
 
+export interface HealthResponse {
+  status: string;
+  inference_mode: string;
+  demo_pairs: number;
+}
+
 /*
   Important:
   Your backend is FastAPI on port 8000.
@@ -68,6 +77,14 @@ const RAW_API_BASE =
 
 export const API_BASE = RAW_API_BASE.replace(/\/$/, "");
 
+/*
+  Without a timeout a wedged backend leaves the UI spinning forever. Analyze is
+  the slow one: `docker` inference runs the TF baseline and takes ~2 min/pair.
+*/
+const TIMEOUT_ANALYZE_MS = 300_000;
+const TIMEOUT_BRIEF_MS = 90_000;
+const TIMEOUT_DEFAULT_MS = 30_000;
+
 async function readError(res: Response, fallback: string): Promise<string> {
   try {
     const text = await res.text();
@@ -77,9 +94,23 @@ async function readError(res: Response, fallback: string): Promise<string> {
   }
 }
 
+export async function fetchHealth(): Promise<HealthResponse> {
+  const res = await fetch(`${API_BASE}/health`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_DEFAULT_MS),
+  });
+
+  if (!res.ok) {
+    throw new Error(await readError(res, "Backend unavailable"));
+  }
+
+  return res.json();
+}
+
 export async function fetchDemoPairs(): Promise<DemoPair[]> {
   const res = await fetch(`${API_BASE}/demo/pairs`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_DEFAULT_MS),
   });
 
   if (!res.ok) {
@@ -96,6 +127,7 @@ export async function analyzeDemoPair(pairId: string): Promise<AnalysisResult> {
   const res = await fetch(`${API_BASE}/analyze`, {
     method: "POST",
     body: form,
+    signal: AbortSignal.timeout(TIMEOUT_ANALYZE_MS),
   });
 
   if (!res.ok) {
@@ -116,6 +148,7 @@ export async function analyzeUpload(
   const res = await fetch(`${API_BASE}/analyze`, {
     method: "POST",
     body: form,
+    signal: AbortSignal.timeout(TIMEOUT_ANALYZE_MS),
   });
 
   if (!res.ok) {
@@ -135,6 +168,7 @@ export async function fetchBrief(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ analysis, context }),
+    signal: AbortSignal.timeout(TIMEOUT_BRIEF_MS),
   });
 
   if (!res.ok) {
@@ -154,6 +188,7 @@ export async function fetchReportPdf(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ analysis, brief }),
+    signal: AbortSignal.timeout(TIMEOUT_DEFAULT_MS),
   });
 
   if (!res.ok) {

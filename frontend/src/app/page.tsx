@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import BriefPanel from "@/components/BriefPanel";
 import DamageCanvas from "@/components/DamageCanvas";
 import ZoneTable from "@/components/ZoneTable";
@@ -13,9 +13,11 @@ import {
   demoImageUrl,
   fetchBrief,
   fetchDemoPairs,
+  fetchHealth,
   fetchReportPdf,
   type AnalysisResult,
   type DemoPair,
+  type HealthResponse,
 } from "@/lib/api";
 
 const DAMAGE_LEGEND = [
@@ -26,6 +28,12 @@ const DAMAGE_LEGEND = [
 ] as const;
 
 function getFriendlyError(error: unknown) {
+  // AbortSignal.timeout rejects with a TimeoutError DOMException, whose message
+  // ("signal timed out") means nothing to a coordinator staring at the screen.
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return "The backend did not respond in time. In docker inference mode a single pair can take about two minutes — check that the container is running.";
+  }
+
   const message = error instanceof Error ? error.message : String(error);
 
   if (
@@ -435,6 +443,32 @@ export default function HomePage() {
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [backendOffline, setBackendOffline] = useState(false);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+
+  // Object URLs created from uploaded Files stay alive until explicitly revoked.
+  // Route every image-URL write through setImageUrls so the previous pair is
+  // always released, whether we are replacing uploads with uploads or with a
+  // demo pair's plain HTTP URLs.
+  const blobUrls = useRef<string[]>([]);
+
+  const setImageUrls = useCallback((pre: string, post: string, isBlob: boolean) => {
+    blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    blobUrls.current = isBlob ? [pre, post] : [];
+    setPreUrl(pre);
+    setPostUrl(post);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  useEffect(() => {
+    fetchHealth()
+      .then(setHealth)
+      .catch(() => setHealth(null));
+  }, []);
 
   useEffect(() => {
     fetchDemoPairs()
@@ -478,9 +512,8 @@ export default function HomePage() {
 
     setPreFile(null);
     setPostFile(null);
-    setPreUrl(demoImageUrl(pair.pre_image));
-    setPostUrl(demoImageUrl(pair.post_image));
-  }, [backendOffline, selectedPair, pairs]);
+    setImageUrls(demoImageUrl(pair.pre_image), demoImageUrl(pair.post_image), false);
+  }, [backendOffline, selectedPair, pairs, setImageUrls]);
 
   const runAnalysis = useCallback(async () => {
     setLoading(true);
@@ -493,15 +526,17 @@ export default function HomePage() {
 
       if (preFile && postFile) {
         result = await analyzeUpload(preFile, postFile);
-        setPreUrl(URL.createObjectURL(preFile));
-        setPostUrl(URL.createObjectURL(postFile));
+        setImageUrls(
+          URL.createObjectURL(preFile),
+          URL.createObjectURL(postFile),
+          true
+        );
       } else if (selectedPair) {
         result = await analyzeDemoPair(selectedPair);
         const pair = pairs.find((p) => p.id === selectedPair);
 
         if (pair) {
-          setPreUrl(demoImageUrl(pair.pre_image));
-          setPostUrl(demoImageUrl(pair.post_image));
+          setImageUrls(demoImageUrl(pair.pre_image), demoImageUrl(pair.post_image), false);
         }
       } else if (backendOffline) {
         throw new Error(
@@ -526,7 +561,7 @@ export default function HomePage() {
       setLoading(false);
       setBriefLoading(false);
     }
-  }, [preFile, postFile, selectedPair, pairs, backendOffline]);
+  }, [preFile, postFile, selectedPair, pairs, backendOffline, setImageUrls]);
 
   const handleDownloadReport = useCallback(async () => {
     if (!analysis || !brief) return;
@@ -680,6 +715,13 @@ export default function HomePage() {
                       ? "Frontend Only"
                       : "Ready"}
                 </span>
+
+                {health && !backendOffline && (
+                  <p className="mt-1 whitespace-nowrap text-[11px] text-slate-500">
+                    {health.inference_mode} · {health.demo_pairs}{" "}
+                    {health.demo_pairs === 1 ? "pair" : "pairs"}
+                  </p>
+                )}
               </div>
             </div>
 
