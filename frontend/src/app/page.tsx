@@ -30,6 +30,43 @@ const DAMAGE_LEGEND = [
   { label: "Destroyed", swatch: "bg-red-500" },
 ] as const;
 
+// The benchmark cards must describe the stack that actually ran, derived from
+// the backend's reported inference_mode — not a fixed "AMD MI300X / PyTorch".
+function getInferenceMeta(mode: string | undefined) {
+  switch (mode) {
+    case "pytorch":
+      return {
+        device: "AMD Instinct MI300X",
+        deviceHelper: "ROCm",
+        framework: "PyTorch",
+        frameworkHelper: "ROCm",
+      };
+    case "docker":
+      return {
+        device: "xView2 baseline",
+        deviceHelper: "Docker container",
+        framework: "TensorFlow",
+        frameworkHelper: "xView2 baseline",
+      };
+    case "stub-groundtruth":
+      return {
+        device: "CPU",
+        deviceHelper: "xBD ground-truth",
+        framework: "NumPy / SciPy",
+        frameworkHelper: "Scoring",
+      };
+    case "stub-heuristic":
+      return {
+        device: "CPU",
+        deviceHelper: "Change detection",
+        framework: "NumPy / SciPy",
+        frameworkHelper: "Heuristic",
+      };
+    default:
+      return { device: "—", deviceHelper: "", framework: "—", frameworkHelper: "" };
+  }
+}
+
 function getFriendlyError(error: unknown) {
   // AbortSignal.timeout rejects with a TimeoutError DOMException, whose message
   // ("signal timed out") means nothing to a coordinator staring at the screen.
@@ -261,9 +298,11 @@ function BenchmarkCard({
 function PipelineStatus({
   loading,
   analysis,
+  seconds,
 }: {
   loading: boolean;
   analysis: AnalysisResult | null;
+  seconds: number | null;
 }) {
   const steps = [
     "Uploading Images",
@@ -274,7 +313,14 @@ function PipelineStatus({
     "Generating Report",
   ];
 
-  const active = Boolean(analysis || loading);
+  // The backend runs as a single call, so steps advance as a group: pending
+  // until a run starts, processing during it, complete once results arrive.
+  const state: "waiting" | "processing" | "done" = loading
+    ? "processing"
+    : analysis
+      ? "done"
+      : "waiting";
+  const active = state !== "waiting";
 
   return (
     <div className="rounded-2xl border border-diq-line/60 bg-slate-950/30 p-4">
@@ -294,19 +340,25 @@ function PipelineStatus({
             {index !== steps.length - 1 && (
               <span
                 className={`absolute left-[11px] top-6 h-5 w-px ${
-                  active ? "bg-green-400/80" : "bg-diq-line/70"
+                  state === "done"
+                    ? "bg-green-400/80"
+                    : state === "processing"
+                      ? "bg-diq-orange/70"
+                      : "bg-diq-line/70"
                 }`}
               />
             )}
 
             <span
               className={`z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold ${
-                active
+                state === "done"
                   ? "border-green-400 bg-green-950/60 text-green-300"
-                  : "border-diq-line bg-slate-950 text-slate-500"
+                  : state === "processing"
+                    ? "border-diq-orange bg-orange-950/40 text-diq-orange"
+                    : "border-diq-line bg-slate-950 text-slate-500"
               }`}
             >
-              {active ? "✓" : index + 1}
+              {state === "done" ? "✓" : index + 1}
             </span>
 
             <div>
@@ -320,22 +372,34 @@ function PipelineStatus({
 
               <p
                 className={`text-xs ${
-                  active ? "text-green-400" : "text-slate-600"
+                  state === "done"
+                    ? "text-green-400"
+                    : state === "processing"
+                      ? "text-diq-orange"
+                      : "text-slate-600"
                 }`}
               >
-                {active ? "Completed" : "Waiting"}
+                {state === "done"
+                  ? "Completed"
+                  : state === "processing"
+                    ? "Processing…"
+                    : "Waiting"}
               </p>
             </div>
           </div>
         ))}
       </div>
 
-      {analysis && (
+      {state === "done" && (
         <div className="mt-5 rounded-xl border border-green-500/30 bg-green-950/20 px-4 py-4 text-center">
           <p className="text-sm font-bold text-green-300">
             ✓ Analysis Complete
           </p>
-          <p className="mt-1 text-xs text-slate-400">12.4 seconds</p>
+          {seconds != null && (
+            <p className="mt-1 text-xs text-slate-400">
+              {seconds.toFixed(1)} seconds
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -488,6 +552,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [backendOffline, setBackendOffline] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [analysisSeconds, setAnalysisSeconds] = useState<number | null>(null);
 
   const beforePanelRef = useRef<HTMLDivElement>(null);
   const afterPanelRef = useRef<HTMLDivElement>(null);
@@ -596,9 +661,12 @@ export default function HomePage() {
     setError(null);
     setBrief(null);
     setBriefSource(null);
+    setAnalysisSeconds(null);
 
     try {
       let result: AnalysisResult;
+
+      const startedAt = performance.now();
 
       if (preFile && postFile) {
         // preUrl/postUrl were already set to preview blobs on file selection.
@@ -618,6 +686,7 @@ export default function HomePage() {
         throw new Error("Select a demo pair or upload before/after images.");
       }
 
+      setAnalysisSeconds((performance.now() - startedAt) / 1000);
       setAnalysis(result);
       setBriefLoading(true);
 
@@ -700,6 +769,27 @@ export default function HomePage() {
     },
     [totals]
   );
+
+  // Mean predicted-class probability across zones — only present in pytorch
+  // mode; the stub/heuristic modes emit label masks with no probabilities.
+  const meanConfidence = useMemo(() => {
+    if (!analysis) return null;
+    const vals = analysis.zones
+      .map((z) => z.confidence)
+      .filter((c): c is number => typeof c === "number");
+    if (!vals.length) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }, [analysis]);
+
+  const inferenceMeta = useMemo(
+    () => getInferenceMeta(analysis?.inference_mode),
+    [analysis],
+  );
+
+  const throughput =
+    analysisSeconds && analysisSeconds > 0 && totals.total > 0
+      ? Math.round(totals.total / analysisSeconds)
+      : null;
 
   const canAnalyze = Boolean((preFile && postFile) || selectedPair);
 
@@ -897,7 +987,11 @@ export default function HomePage() {
 
               {error && <ErrorNotice message={error} />}
 
-              <PipelineStatus loading={loading} analysis={analysis} />
+              <PipelineStatus
+                loading={loading}
+                analysis={analysis}
+                seconds={analysisSeconds}
+              />
             </div>
           </aside>
 
@@ -968,30 +1062,40 @@ export default function HomePage() {
               <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-5">
                 <BenchmarkCard
                   label="Model Confidence"
-                  value={analysis ? "94.2%" : "—"}
-                  helper="High Confidence"
+                  value={
+                    meanConfidence != null
+                      ? `${(meanConfidence * 100).toFixed(1)}%`
+                      : analysis
+                        ? "N/A"
+                        : "—"
+                  }
+                  helper={
+                    meanConfidence != null
+                      ? "Mean model probability"
+                      : "PyTorch mode only"
+                  }
                   icon="⌁"
                   accent="border-green-500/30"
                 />
 
                 <BenchmarkCard
                   label="Inference Device"
-                  value="AMD Instinct MI300X"
-                  helper="ROCm 6.1"
+                  value={analysis ? inferenceMeta.device : "—"}
+                  helper={analysis ? inferenceMeta.deviceHelper : "Inference backend"}
                   icon="▣"
                   accent="border-green-500/30"
                 />
 
                 <BenchmarkCard
                   label="Inference Time"
-                  value={analysis ? "12.4 sec" : "—"}
+                  value={analysisSeconds != null ? `${analysisSeconds.toFixed(1)} sec` : "—"}
                   helper="End-to-end processing"
                   icon="◷"
                 />
 
                 <BenchmarkCard
                   label="Throughput"
-                  value={analysis ? "312" : "—"}
+                  value={throughput != null ? `${throughput}` : "—"}
                   helper="buildings/sec"
                   icon="◜"
                   accent="border-green-500/30"
@@ -999,8 +1103,8 @@ export default function HomePage() {
 
                 <BenchmarkCard
                   label="Framework"
-                  value="PyTorch"
-                  helper="ROCm"
+                  value={analysis ? inferenceMeta.framework : "—"}
+                  helper={analysis ? inferenceMeta.frameworkHelper : "Inference stack"}
                   icon="◉"
                   accent="border-orange-500/30"
                 />
@@ -1069,7 +1173,7 @@ export default function HomePage() {
                 <div className="rounded-xl border border-diq-line/60 bg-slate-950/35 p-4 text-center">
                   <p className="text-xs text-slate-400">Processing Time</p>
                   <p className="mt-1 text-3xl font-black text-white">
-                    {analysis ? "12.4" : "—"}
+                    {analysisSeconds != null ? analysisSeconds.toFixed(1) : "—"}
                     <span className="ml-1 text-base text-slate-400">sec</span>
                   </p>
                 </div>
