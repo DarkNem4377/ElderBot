@@ -72,6 +72,36 @@ function normalizeBbox(bbox: number[]) {
   };
 }
 
+type Obstacle = { x: number; y: number; w: number; h: number };
+
+/*
+  The After panel paints zone labels onto this canvas, but the HTML overlays
+  above it (the "AI Damage Overlay After" header pill and the "Damage Mask
+  Active" badge) sit at the top-left and hide any label drawn underneath them.
+  Given a label's rect, nudge it straight down until it clears every obstacle so
+  the zone name stays readable.
+*/
+function clearObstacles(
+  labelX: number,
+  labelY: number,
+  labelWidth: number,
+  labelHeight: number,
+  obstacles: Obstacle[],
+) {
+  let y = labelY;
+
+  for (const o of obstacles) {
+    const overlapsX = labelX < o.x + o.w && labelX + labelWidth > o.x;
+    const overlapsY = y < o.y + o.h && y + labelHeight > o.y;
+
+    if (overlapsX && overlapsY) {
+      y = o.y + o.h + 6;
+    }
+  }
+
+  return y;
+}
+
 function getContainedImageRect(params: {
   containerWidth: number;
   containerHeight: number;
@@ -203,6 +233,15 @@ export default function DamageCanvas({ postImageUrl, analysis }: Props) {
       imageHeight: imageSize.height,
     });
 
+    // Overlays that float above this canvas (see the After panel in page.tsx).
+    // Coordinates are in container space, which matches the canvas 1:1.
+    const obstacles: Obstacle[] = [
+      // "AI Damage Overlay After" header pill (top-4 left-4, max-w ~52%).
+      { x: 16, y: 16, w: containerSize.width * 0.56, h: 40 },
+      // "Damage Mask Active" badge (top-16 left-4), only shown once analysed.
+      { x: 16, y: 62, w: 176, h: 32 },
+    ];
+
     const drawZones = () => {
       if (!analysis.zones?.length) return;
 
@@ -237,10 +276,16 @@ export default function DamageCanvas({ postImageUrl, analysis }: Props) {
         const label = `ZONE ${zone.rank}`;
         const subLabel = `${damagedBuildings} damaged`;
 
-        const labelX = drawX + 8;
-        const labelY = drawY + 8;
         const labelWidth = zone.rank === 1 ? 124 : 108;
         const labelHeight = 42;
+        const labelX = drawX + 8;
+        const labelY = clearObstacles(
+          labelX,
+          drawY + 8,
+          labelWidth,
+          labelHeight,
+          obstacles,
+        );
 
         ctx.fillStyle = style.label;
         ctx.beginPath();

@@ -20,6 +20,9 @@ import {
   type HealthResponse,
 } from "@/lib/api";
 
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 3;
+
 const DAMAGE_LEGEND = [
   { label: "No Damage", swatch: "bg-green-400" },
   { label: "Minor Damage", swatch: "bg-yellow-400" },
@@ -394,12 +397,24 @@ function FloatingLegend() {
   );
 }
 
-function MapControls() {
+function MapControls({
+  onZoomIn,
+  onZoomOut,
+  canZoomIn,
+  canZoomOut,
+}: {
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  canZoomIn: boolean;
+  canZoomOut: boolean;
+}) {
   return (
     <div className="absolute bottom-4 right-4 z-20 flex flex-col overflow-hidden rounded-lg border border-diq-line/70 bg-slate-950/85 shadow-xl shadow-black/30">
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center border-b border-diq-line/60 text-lg font-bold text-white hover:bg-slate-800"
+        onClick={onZoomIn}
+        disabled={!canZoomIn}
+        className="flex h-9 w-9 items-center justify-center border-b border-diq-line/60 text-lg font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Zoom in"
       >
         +
@@ -407,7 +422,9 @@ function MapControls() {
 
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center text-lg font-bold text-white hover:bg-slate-800"
+        onClick={onZoomOut}
+        disabled={!canZoomOut}
+        className="flex h-9 w-9 items-center justify-center text-lg font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Zoom out"
       >
         −
@@ -416,14 +433,41 @@ function MapControls() {
   );
 }
 
-function FullscreenButton() {
+function FullscreenButton({
+  targetRef,
+}: {
+  targetRef: React.RefObject<HTMLElement | null>;
+}) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleChange = () => {
+      setIsFullscreen(document.fullscreenElement === targetRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", handleChange);
+    return () => document.removeEventListener("fullscreenchange", handleChange);
+  }, [targetRef]);
+
+  const toggleFullscreen = () => {
+    const el = targetRef.current;
+    if (!el) return;
+
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void el.requestFullscreen?.();
+    }
+  };
+
   return (
     <button
       type="button"
-      className="absolute bottom-4 right-16 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-diq-line/70 bg-slate-950/85 text-sm text-white shadow-xl shadow-black/30 hover:bg-slate-800"
-      aria-label="Fullscreen"
+      onClick={toggleFullscreen}
+      className="absolute bottom-4 right-16 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-diq-line/70 bg-slate-950/85 text-sm text-white shadow-xl shadow-black/30 transition hover:bg-slate-800"
+      aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
     >
-      ⛶
+      {isFullscreen ? "⤡" : "⛶"}
     </button>
   );
 }
@@ -445,22 +489,54 @@ export default function HomePage() {
   const [backendOffline, setBackendOffline] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
 
-  // Object URLs created from uploaded Files stay alive until explicitly revoked.
-  // Route every image-URL write through setImageUrls so the previous pair is
-  // always released, whether we are replacing uploads with uploads or with a
-  // demo pair's plain HTTP URLs.
-  const blobUrls = useRef<string[]>([]);
+  const beforePanelRef = useRef<HTMLDivElement>(null);
+  const afterPanelRef = useRef<HTMLDivElement>(null);
+  const [afterZoom, setAfterZoom] = useState(1);
 
-  const setImageUrls = useCallback((pre: string, post: string, isBlob: boolean) => {
-    blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
-    blobUrls.current = isBlob ? [pre, post] : [];
-    setPreUrl(pre);
-    setPostUrl(post);
+  const zoomIn = useCallback(
+    () => setAfterZoom((z) => Math.min(Math.round((z + 0.25) * 100) / 100, MAX_ZOOM)),
+    [],
+  );
+  const zoomOut = useCallback(
+    () => setAfterZoom((z) => Math.max(Math.round((z - 0.25) * 100) / 100, MIN_ZOOM)),
+    [],
+  );
+
+  useEffect(() => {
+    setAfterZoom(MIN_ZOOM);
+  }, [postUrl]);
+
+  // Object URLs created from uploaded Files stay alive until explicitly revoked.
+  // Track the pre/post blob independently so an uploaded image can be previewed
+  // (and zoomed/expanded) the moment it is selected, then released when it is
+  // replaced — whether by another upload or a demo pair's plain HTTP URLs.
+  const preBlobRef = useRef<string | null>(null);
+  const postBlobRef = useRef<string | null>(null);
+
+  const setPreImage = useCallback((url: string, isBlob: boolean) => {
+    if (preBlobRef.current) URL.revokeObjectURL(preBlobRef.current);
+    preBlobRef.current = isBlob ? url : null;
+    setPreUrl(url);
   }, []);
+
+  const setPostImage = useCallback((url: string, isBlob: boolean) => {
+    if (postBlobRef.current) URL.revokeObjectURL(postBlobRef.current);
+    postBlobRef.current = isBlob ? url : null;
+    setPostUrl(url);
+  }, []);
+
+  const setImageUrls = useCallback(
+    (pre: string, post: string, isBlob: boolean) => {
+      setPreImage(pre, isBlob);
+      setPostImage(post, isBlob);
+    },
+    [setPreImage, setPostImage],
+  );
 
   useEffect(() => {
     return () => {
-      blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
+      if (preBlobRef.current) URL.revokeObjectURL(preBlobRef.current);
+      if (postBlobRef.current) URL.revokeObjectURL(postBlobRef.current);
     };
   }, []);
 
@@ -525,12 +601,8 @@ export default function HomePage() {
       let result: AnalysisResult;
 
       if (preFile && postFile) {
+        // preUrl/postUrl were already set to preview blobs on file selection.
         result = await analyzeUpload(preFile, postFile);
-        setImageUrls(
-          URL.createObjectURL(preFile),
-          URL.createObjectURL(postFile),
-          true
-        );
       } else if (selectedPair) {
         result = await analyzeDemoPair(selectedPair);
         const pair = pairs.find((p) => p.id === selectedPair);
@@ -640,22 +712,22 @@ export default function HomePage() {
               <img
                 src="/disasteriq-icon.png"
                 alt="DisasterIQ logo"
-                width={72}
-                height={72}
+                width={84}
+                height={84}
                 className="shrink-0 rounded-2xl bg-white shadow-lg shadow-black/20"
               />
 
               <div>
                 <div className="flex items-baseline gap-1">
-                  <h1 className="text-4xl font-black tracking-tight text-white md:text-5xl">
+                  <h1 className="text-5xl font-black tracking-tight text-white md:text-6xl">
                     Disaster
                   </h1>
-                  <h1 className="text-4xl font-black tracking-tight text-diq-orange md:text-5xl">
+                  <h1 className="text-5xl font-black tracking-tight text-diq-orange md:text-6xl">
                     IQ
                   </h1>
                 </div>
 
-                <p className="mt-1 whitespace-nowrap text-[11px] font-black uppercase tracking-[0.18em] text-slate-300">
+                <p className="mt-1.5 whitespace-nowrap text-[13px] font-black uppercase tracking-[0.18em] text-slate-300">
                   See damage.{" "}
                   <span className="text-diq-orange">Prioritize relief.</span>{" "}
                   <span className="text-red-400">Save lives.</span>
@@ -663,45 +735,27 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="grid flex-1 gap-3 md:grid-cols-2 2xl:max-w-[1110px] 2xl:grid-cols-4">
-              <div className="border-l border-diq-line/60 px-5 py-1">
+            <div className="grid flex-1 gap-8 sm:grid-cols-2 2xl:max-w-[760px]">
+              <div className="border-l border-diq-line/60 px-6 py-1">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
                   Dataset
                 </p>
 
-                <p className="mt-1 flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-white">
-                  <span className="rounded bg-green-500 px-1.5 py-0.5 text-[10px] text-white">
+                <p className="mt-1.5 flex items-center gap-2 whitespace-nowrap text-lg font-semibold text-white">
+                  <span className="rounded bg-green-500 px-1.5 py-0.5 text-[11px] text-white">
                     C
                   </span>
                   Global Disaster Imagery
                 </p>
               </div>
 
-              <div className="border-l border-diq-line/60 px-5 py-1">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                  Model
-                </p>
-                <p className="mt-1 whitespace-nowrap text-sm font-semibold text-white">
-                  ResNet50 + ROCm
-                </p>
-              </div>
-
-              <div className="border-l border-diq-line/60 px-5 py-1">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                  Inference Device
-                </p>
-                <p className="mt-1 whitespace-nowrap text-sm font-semibold text-white">
-                  AMD Instinct MI300X
-                </p>
-              </div>
-
-              <div className="border-l border-diq-line/60 px-5 py-1">
+              <div className="border-l border-diq-line/60 px-6 py-1">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
                   Status
                 </p>
 
                 <span
-                  className={`mt-1 inline-flex rounded border px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] ${
+                  className={`mt-1.5 inline-flex rounded border px-3 py-1 text-sm font-black uppercase tracking-[0.12em] ${
                     loading
                       ? "border-diq-orange/70 bg-diq-orange/10 text-diq-orange"
                       : backendOffline
@@ -717,7 +771,7 @@ export default function HomePage() {
                 </span>
 
                 {health && !backendOffline && (
-                  <p className="mt-1 whitespace-nowrap text-[11px] text-slate-500">
+                  <p className="mt-1.5 whitespace-nowrap text-xs text-slate-500">
                     {health.inference_mode} · {health.demo_pairs}{" "}
                     {health.demo_pairs === 1 ? "pair" : "pairs"}
                   </p>
@@ -727,14 +781,14 @@ export default function HomePage() {
 
             <button
               type="button"
-              className={`hidden shrink-0 items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold shadow-lg shadow-black/20 transition 2xl:flex ${
+              className={`hidden shrink-0 items-center gap-2.5 rounded-lg border px-5 py-2.5 text-base font-semibold shadow-lg shadow-black/20 transition 2xl:flex ${
                 backendOffline
                   ? "border-amber-500/30 bg-amber-950/20 text-amber-200"
                   : "border-blue-500/30 bg-blue-950/30 text-blue-100 hover:border-blue-400/50"
               }`}
             >
               <span
-                className={`h-2.5 w-2.5 rounded-full ${
+                className={`h-3 w-3 rounded-full ${
                   backendOffline ? "bg-amber-400" : "bg-green-400"
                 }`}
               />
@@ -769,6 +823,7 @@ export default function HomePage() {
                   postFile={postFile}
                   onPreSelect={(file) => {
                     setPreFile(file);
+                    setPreImage(file ? URL.createObjectURL(file) : "", Boolean(file));
                     if (file) {
                       setSelectedPair("");
                       setAnalysis(null);
@@ -778,6 +833,7 @@ export default function HomePage() {
                   }}
                   onPostSelect={(file) => {
                     setPostFile(file);
+                    setPostImage(file ? URL.createObjectURL(file) : "", Boolean(file));
                     if (file) {
                       setSelectedPair("");
                       setAnalysis(null);
@@ -796,6 +852,8 @@ export default function HomePage() {
                     setSelectedPair(e.target.value);
                     setPreFile(null);
                     setPostFile(null);
+                    setPreImage("", false);
+                    setPostImage("", false);
                     setAnalysis(null);
                     setBrief(null);
                     setBriefSource(null);
@@ -846,7 +904,10 @@ export default function HomePage() {
           <section className="space-y-4">
             <div className="overflow-hidden rounded-xl border border-blue-500/35 bg-diq-panel/45 shadow-2xl shadow-black/20">
               <div className="grid min-h-[540px] gap-0 lg:grid-cols-2">
-                <div className="relative overflow-hidden border-b border-diq-line/60 lg:border-b-0 lg:border-r">
+                <div
+                  ref={beforePanelRef}
+                  className="relative overflow-hidden border-b border-diq-line/60 bg-slate-950 lg:border-b-0 lg:border-r"
+                >
                   <div className="absolute left-4 top-4 z-20 rounded bg-blue-950/90 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-black/30">
                     Before Disaster
                   </div>
@@ -865,23 +926,36 @@ export default function HomePage() {
                     © Mapbox © OpenStreetMap
                   </div>
 
-                  <FullscreenButton />
+                  <FullscreenButton targetRef={beforePanelRef} />
                 </div>
 
-                <div className="relative overflow-hidden">
+                <div
+                  ref={afterPanelRef}
+                  className="relative overflow-hidden bg-slate-950"
+                >
                   <div className="absolute left-4 top-4 z-20 max-w-[52%] rounded bg-blue-950/90 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-black/30">
                     AI Damage Overlay After
                   </div>
 
                   {postUrl ? (
-                    <DamageCanvas postImageUrl={postUrl} analysis={analysis} />
+                    <div
+                      className="h-full w-full origin-center transition-transform duration-200 ease-out"
+                      style={{ transform: `scale(${afterZoom})` }}
+                    >
+                      <DamageCanvas postImageUrl={postUrl} analysis={analysis} />
+                    </div>
                   ) : (
                     <EmptyImageState />
                   )}
 
                   <FloatingLegend />
-                  <MapControls />
-                  <FullscreenButton />
+                  <MapControls
+                    onZoomIn={zoomIn}
+                    onZoomOut={zoomOut}
+                    canZoomIn={afterZoom < MAX_ZOOM}
+                    canZoomOut={afterZoom > MIN_ZOOM}
+                  />
+                  <FullscreenButton targetRef={afterPanelRef} />
                 </div>
               </div>
             </div>
