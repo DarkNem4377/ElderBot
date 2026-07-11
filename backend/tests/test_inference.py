@@ -100,6 +100,85 @@ def test_diff_heuristic_resizes_mismatched_post(tmp_path):
     assert mask.shape == (32, 32)
 
 
+def test_diff_heuristic_aligns_shifted_pair(tmp_path):
+    """A shifted capture of the same scene must not read as wall-to-wall damage.
+
+    Registration should cancel the offset, so a translated copy of a textured
+    frame produces almost no damage — versus the near-total mask a raw diff
+    would yield.
+    """
+    rng = np.random.default_rng(0)
+    base = rng.integers(0, 256, size=(96, 96), dtype=np.uint8)
+    Image.fromarray(base).save(tmp_path / "pre.png")
+    shifted = np.roll(base, shift=(3, 4), axis=(0, 1))
+    Image.fromarray(shifted).save(tmp_path / "post.png")
+
+    mask = np.array(
+        Image.open(inference._diff_mask(tmp_path / "pre.png", tmp_path / "post.png", tmp_path / "m.png"))
+    )
+
+    assert (mask > 0).mean() < 0.05
+
+
+def test_diff_heuristic_ignores_global_illumination(tmp_path):
+    """A uniform brightness lift on a textured scene is lighting, not damage."""
+    rng = np.random.default_rng(1)
+    base = rng.integers(0, 180, size=(96, 96), dtype=np.uint8)
+    Image.fromarray(base).save(tmp_path / "pre.png")
+    Image.fromarray((base.astype(np.int16) + 25).astype(np.uint8)).save(tmp_path / "post.png")
+
+    mask = np.array(
+        Image.open(inference._diff_mask(tmp_path / "pre.png", tmp_path / "post.png", tmp_path / "m.png"))
+    )
+
+    assert (mask > 0).mean() < 0.02
+
+
+def test_diff_heuristic_detects_real_change_under_illumination(tmp_path):
+    """Illumination correction must not hide a genuine localized change."""
+    rng = np.random.default_rng(2)
+    base = rng.integers(0, 180, size=(96, 96), dtype=np.uint8)
+    Image.fromarray(base).save(tmp_path / "pre.png")
+    post = (base.astype(np.int16) + 25).astype(np.uint8).copy()
+    post[30:60, 30:60] = 255  # a real 30x30 change on top of the lighting shift
+    Image.fromarray(post).save(tmp_path / "post.png")
+
+    mask = np.array(
+        Image.open(inference._diff_mask(tmp_path / "pre.png", tmp_path / "post.png", tmp_path / "m.png"))
+    )
+
+    assert mask[30:60, 30:60].mean() > 0  # the patch is flagged
+    # and the untouched surroundings stay mostly clear
+    outside = mask.copy()
+    outside[30:60, 30:60] = 0
+    assert (outside > 0).mean() < 0.02
+
+
+def test_diff_heuristic_drops_subbuilding_blobs(tmp_path):
+    """Change regions smaller than the min-building area are removed as noise.
+
+    On a 1200x1200 frame the min-building area is ~22 px, so a 4x4 blob (which
+    survives the 3x3 opening) is filtered, while a large block is kept.
+    """
+    pre = _write_png(tmp_path / "pre.png", value=0, size=(1200, 1200))
+    arr = np.zeros((1200, 1200), dtype=np.uint8)
+    arr[10:14, 10:14] = 255  # 4x4 = 16 px, below the ~22 px min-building area
+    Image.fromarray(arr).save(tmp_path / "post.png")
+
+    mask = np.array(
+        Image.open(inference._diff_mask(tmp_path / "pre.png", tmp_path / "post.png", tmp_path / "m.png"))
+    )
+    assert not (mask > 0).any()
+
+    arr[100:140, 100:140] = 255  # add a 40x40 block, clearly a building-scale change
+    Image.fromarray(arr).save(tmp_path / "post.png")
+    mask = np.array(
+        Image.open(inference._diff_mask(tmp_path / "pre.png", tmp_path / "post.png", tmp_path / "m.png"))
+    )
+    assert (mask > 0).any()
+    assert not (mask[10:14, 10:14] > 0).any()  # small blob still filtered
+
+
 def test_unsupported_mode_raises_runtime_error(tmp_path, monkeypatch):
     monkeypatch.setattr(inference.settings, "inference_mode", "quantum")
     pre = _write_png(tmp_path / "pre.png")

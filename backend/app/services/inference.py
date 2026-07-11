@@ -29,6 +29,14 @@ PYTORCH_TIMEOUT_SECONDS = 600
 # Pixels differing by less than this are lighting/registration noise, never damage.
 MIN_DIFF_THRESHOLD = 15.0
 DIFF_PERCENTILE = 92
+# Cap the global per-channel brightness correction: modest shifts are lighting
+# and get cancelled, but a catastrophic uniform change is still real damage.
+ILLUM_CLAMP = 40.0
+# Registration guards: skip alignment on near-flat frames (no features to lock
+# onto) and reject implausibly large estimated shifts (not a translation pair).
+MIN_TEXTURE_STD = 8.0
+MAX_ALIGN_FRACTION = 0.08
+ALIGN_ESTIMATE_MAX_DIM = 1024
 
 
 def _demo_search_dirs() -> list[Path]:
@@ -142,24 +150,93 @@ def resolve_demo_target(post_image_path: Path) -> Path | None:
     return None
 
 
-def _diff_mask(pre_image_path: Path, post_image_path: Path, out_path: Path) -> Path:
-    """Derive a damage mask from the pre/post brightness difference.
+def _estimate_translation(pre_gray: np.ndarray, post_gray: np.ndarray) -> tuple[int, int]:
+    """Estimate the (dy, dx) shift to apply to *post* so it aligns onto *pre*.
 
-    A stand-in for a real model when no ground truth exists: pixels that
-    changed a lot between the two captures are treated as damaged, and the
-    magnitude of the change picks the severity class. The threshold is a high
-    percentile of the difference, so the mask adapts to each image pair rather
-    than assuming a fixed brightness scale.
+    Uses FFT phase correlation, which locks onto shared texture rather than
+    absolute brightness. Returns (0, 0) when a frame is too flat to register or
+    the estimate is implausibly large (the pair is not a simple translation of
+    each other), so alignment can only ever help, never invent a shift.
     """
-    pre = np.array(Image.open(pre_image_path).convert("L"), dtype=np.float32)
-    post_image = Image.open(post_image_path).convert("L")
+    h, w = pre_gray.shape
 
-    if post_image.size != (pre.shape[1], pre.shape[0]):
-        post_image = post_image.resize((pre.shape[1], pre.shape[0]))
+    # Estimate on a downsampled copy so a 100 MB image can't make the FFT dominate
+    # the whole request; scale the resulting shift back to full resolution.
+    scale = max(1, int(max(h, w) // ALIGN_ESTIMATE_MAX_DIM))
+    a = pre_gray[::scale, ::scale]
+    b = post_gray[::scale, ::scale]
 
+    if float(a.std()) < MIN_TEXTURE_STD or float(b.std()) < MIN_TEXTURE_STD:
+        return 0, 0
+
+    fa = np.fft.rfft2(a - a.mean())
+    fb = np.fft.rfft2(b - b.mean())
+    cross = fa * np.conj(fb)
+    cross /= np.abs(cross) + 1e-8
+    corr = np.fft.irfft2(cross, s=a.shape)
+
+    py, px = np.unravel_index(int(np.argmax(corr)), corr.shape)
+    ah, aw = a.shape
+    if py > ah // 2:
+        py -= ah
+    if px > aw // 2:
+        px -= aw
+
+    # phase correlation peak = shift from pre to post; the correction is the negation.
+    dy, dx = -int(py) * scale, -int(px) * scale
+
+    if abs(dy) > int(h * MAX_ALIGN_FRACTION) or abs(dx) > int(w * MAX_ALIGN_FRACTION):
+        return 0, 0
+    return dy, dx
+
+
+def _diff_mask(pre_image_path: Path, post_image_path: Path, out_path: Path) -> Path:
+    """Derive a damage mask from an aligned, illumination-corrected pre/post diff.
+
+    A stand-in for a real model when no ground truth exists. To keep arbitrary
+    uploads meaningful rather than lighting up on every incidental difference,
+    the pair is first co-registered (translation) and its global brightness
+    matched, then a colour-aware change magnitude is thresholded at a high
+    percentile so the mask adapts to each pair. Regions too small to be a
+    building are dropped, and the change magnitude picks the severity class.
+
+    For single-channel inputs the colour distance collapses to |Δgray|, so the
+    behaviour matches the original grayscale heuristic on such images.
+    """
+    pre = np.array(Image.open(pre_image_path).convert("RGB"), dtype=np.float32)
+    h, w = pre.shape[:2]
+
+    post_image = Image.open(post_image_path).convert("RGB")
+    if post_image.size != (w, h):
+        post_image = post_image.resize((w, h))
     post = np.array(post_image, dtype=np.float32)
 
-    diff = np.abs(post - pre)
+    # 1. Cancel a modest global per-channel brightness shift (exposure/lighting),
+    #    using the robust median so damage in a minority of pixels doesn't skew it.
+    for c in range(3):
+        offset = float(np.median(pre[..., c]) - np.median(post[..., c]))
+        post[..., c] += max(-ILLUM_CLAMP, min(ILLUM_CLAMP, offset))
+
+    # 2. Co-register the pair so a small capture offset isn't read as damage along
+    #    every edge. Border pixels exposed by the shift are excluded from scoring.
+    dy, dx = _estimate_translation(pre.mean(axis=2), post.mean(axis=2))
+    valid: np.ndarray | None = None
+    if dy or dx:
+        post = ndimage.shift(post, (dy, dx, 0), order=1, mode="nearest")
+        valid = np.ones((h, w), dtype=bool)
+        my, mx = abs(dy), abs(dx)
+        if my:
+            valid[:my, :] = False
+            valid[h - my:, :] = False
+        if mx:
+            valid[:, :mx] = False
+            valid[:, w - mx:] = False
+
+    # 3. Colour-aware change magnitude (0..255); equals |Δgray| for grayscale.
+    diff = np.sqrt(np.mean((post - pre) ** 2, axis=2))
+    if valid is not None:
+        diff[~valid] = 0.0
+
     threshold = max(MIN_DIFF_THRESHOLD, float(np.percentile(diff, DIFF_PERCENTILE)))
 
     # When more than (100 - DIFF_PERCENTILE)% of the frame changed, the
@@ -176,10 +253,22 @@ def _diff_mask(pre_image_path: Path, post_image_path: Path, out_path: Path) -> P
     # anything thinner than the structuring element before that happens.
     damaged = ndimage.binary_opening(diff > threshold, structure=np.ones((3, 3)))
 
-    mask = np.zeros(pre.shape, dtype=np.uint8)
-    severity = np.full(diff[damaged].shape, 2, dtype=np.uint8)
-    severity[diff[damaged] > threshold * 1.5] = 3
-    severity[diff[damaged] > threshold * 2.2] = 4
+    # 4. Drop connected regions too small to plausibly be a building — noise the
+    #    opening missed, or single tree/vehicle changes.
+    min_region = max(10, int(round(h * w * 1.5e-5)))
+    labels, n = ndimage.label(damaged)
+    if n:
+        counts = np.bincount(labels.ravel())
+        small = np.nonzero(counts < min_region)[0]
+        small = small[small != 0]
+        if small.size:
+            damaged[np.isin(labels, small)] = False
+
+    mask = np.zeros((h, w), dtype=np.uint8)
+    dvals = diff[damaged]
+    severity = np.full(dvals.shape, 2, dtype=np.uint8)
+    severity[dvals > threshold * 1.5] = 3
+    severity[dvals > threshold * 2.2] = 4
     mask[damaged] = severity
 
     Image.fromarray(mask, mode="L").save(out_path)
