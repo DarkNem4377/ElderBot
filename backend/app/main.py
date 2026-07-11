@@ -28,7 +28,7 @@ from app.services.scoring import score_mask
 
 _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
 
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = frozenset(
     {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/tiff"}
 )
@@ -82,7 +82,10 @@ def _validate_upload(upload: UploadFile) -> None:
             status_code=400, detail=f"Unsupported image type: {upload.content_type}"
         )
     if upload.size is not None and upload.size > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="Image exceeds the 25 MB upload limit")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit",
+        )
 
 
 def _save_upload(upload: UploadFile, dest: Path, job_dir: Path) -> None:
@@ -99,7 +102,8 @@ def _save_upload(upload: UploadFile, dest: Path, job_dir: Path) -> None:
                 written += len(chunk)
                 if written > MAX_UPLOAD_BYTES:
                     raise HTTPException(
-                        status_code=400, detail="Image exceeds the 25 MB upload limit"
+                        status_code=400,
+                        detail=f"Image exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit",
                     )
                 f.write(chunk)
     except HTTPException:
