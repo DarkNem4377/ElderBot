@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import platform
 import re
 import shutil
 import uuid
@@ -83,6 +85,44 @@ def health() -> dict:
         "status": "ok",
         "inference_mode": settings.inference_mode,
         "demo_pairs": len(list_demo_pairs()),
+    }
+
+
+@app.get("/compute")
+def compute() -> dict:
+    """Report the silicon this instance actually runs on.
+
+    Claims about which hardware serves a workload should be checkable rather
+    than asserted, so the deployment reports its own CPU instead of a README
+    doing it on the deployment's behalf. Reads a stable, public detail (the CPU
+    model string) — nothing about the host's tenants or network.
+    """
+    model = platform.processor() or platform.machine()
+    try:
+        # Linux: /proc/cpuinfo carries the real marketing name; platform.processor()
+        # is often just "x86_64" there.
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("model name"):
+                model = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+
+    vendor = "unknown"
+    lowered = model.lower()
+    if "amd" in lowered or "epyc" in lowered or "ryzen" in lowered:
+        vendor = "AMD"
+    elif "intel" in lowered or "xeon" in lowered:
+        vendor = "Intel"
+
+    return {
+        "cpu_model": model,
+        "cpu_vendor": vendor,
+        "cpu_count": os.cpu_count(),
+        "inference_mode": settings.inference_mode,
+        # The situation brief is served by Fireworks AI, which runs inference on
+        # AMD Instinct GPUs (https://fireworks.ai/partners/amd).
+        "brief_model": settings.fireworks_model,
     }
 
 
