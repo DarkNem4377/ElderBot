@@ -20,6 +20,7 @@ import {
   type DemoPair,
   type HealthResponse,
 } from "@/lib/api";
+import { FALLBACK_DEMO_PAIRS } from "@/lib/demoPairs";
 
 /*
   Which backend is this page actually probing? Without this on screen, a local
@@ -613,8 +614,16 @@ function FullscreenButton({
 }
 
 export default function HomePage() {
-  const [pairs, setPairs] = useState<DemoPair[]>([]);
-  const [selectedPair, setSelectedPair] = useState<string>("");
+  /*
+    Seed with the bundled pair list so the demo is clickable from the first
+    paint. Gating the dropdown on a successful health probe meant a cold or
+    restarting backend left nothing to demo at all; the live /demo/pairs
+    response replaces this as soon as it arrives.
+  */
+  const [pairs, setPairs] = useState<DemoPair[]>(FALLBACK_DEMO_PAIRS);
+  const [selectedPair, setSelectedPair] = useState<string>(
+    FALLBACK_DEMO_PAIRS[0]?.id ?? "",
+  );
   const [preFile, setPreFile] = useState<File | null>(null);
   const [postFile, setPostFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -716,9 +725,13 @@ export default function HomePage() {
         .then(({ health: h, pairs: p }) => {
           if (signal?.aborted) return;
           setHealth(h);
-          setPairs(p);
+          // The live list wins when it has content; an empty/failed pairs
+          // fetch must not clobber the bundled fallback the demo relies on.
+          if (p.length > 0) {
+            setPairs(p);
+            setSelectedPair((cur) => cur || p[0].id);
+          }
           markOnline();
-          if (p.length > 0) setSelectedPair((cur) => cur || p[0].id);
         })
         .catch((err) => {
           if (signal?.aborted) return;
@@ -728,8 +741,8 @@ export default function HomePage() {
           // right after analyze/brief succeeded.
           if (quiet && Date.now() < onlineUntilRef.current) return;
           setHealth(null);
-          setPairs([]);
-          setSelectedPair("");
+          // Keep the bundled pairs and selection: a failed probe means the
+          // backend is unreachable *right now*, not that the demo set is gone.
           setBackendOffline(true);
         })
         .finally(() => {
@@ -778,13 +791,13 @@ export default function HomePage() {
     setBriefSource(null);
     setBriefLoading(false);
 
-    if (backendOffline) {
-      setError(
-        "The analysis server is not reachable yet. It may still be waking up — try again in a moment."
-      );
-      return;
-    }
-
+    /*
+      Deliberately NOT gated on backendOffline: the pair list is bundled and
+      the image URLs are known, and a request to a waking Render host is held
+      by its proxy until boot completes. Blocking the click here turned a
+      30-second wake into "the demo doesn't work"; letting it through means
+      the imagery appears the moment the backend answers.
+    */
     if (!selectedPair) {
       setError("Select a demo pair first.");
       return;
@@ -800,7 +813,7 @@ export default function HomePage() {
     setPreFile(null);
     setPostFile(null);
     setImageUrls(demoImageUrl(pair.pre_image), demoImageUrl(pair.post_image), false);
-  }, [backendOffline, selectedPair, pairs, setImageUrls]);
+  }, [selectedPair, pairs, setImageUrls]);
 
   const runAnalysis = useCallback(async () => {
     setLoading(true);
