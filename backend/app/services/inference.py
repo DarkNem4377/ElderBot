@@ -15,6 +15,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -61,18 +62,51 @@ def _infer_disaster_type(base: str) -> str:
     return base.split("_")[0] if "_" in base else base
 
 
+@lru_cache(maxsize=128)
+def _damaged_pixel_count(target_path: str, _mtime: float) -> int:
+    """Count damaged pixels (classes 2-4) in an xBD ground-truth target mask.
+
+    Cached on (path, mtime): the masks never change at runtime, and this is on
+    the /health and /demo/pairs hot path.
+    """
+    try:
+        with Image.open(target_path) as img:
+            mask = np.asarray(img)
+    except (OSError, ValueError):
+        return 0
+
+    return int(((mask >= 2) & (mask <= 4)).sum())
+
+
+def _demo_damage_rank(post_path: Path) -> int:
+    """How much ground-truth damage a pair contains; 0 when it ships no target."""
+    target = resolve_demo_target(post_path)
+    if target is None:
+        return 0
+
+    try:
+        mtime = target.stat().st_mtime
+    except OSError:
+        return 0
+
+    return _damaged_pixel_count(str(target), mtime)
+
+
 def list_demo_pairs() -> list[dict[str, str]]:
-    """Return all before/after demo pairs.
+    """Return all before/after demo pairs, most-damaged first.
 
     Expected naming:
         <id>_pre_disaster.png
         <id>_post_disaster.png
 
-    Example:
-        demo_pre_disaster.png
-        demo_post_disaster.png
+    Ordering matters: the dashboard selects the first pair by default, and
+    several xBD scenes are genuinely undamaged. Sorting alphabetically put such
+    a pair first, so the default analysis returned an all-zero result that read
+    as a broken app. Rank by ground-truth damage so the default pair actually
+    exercises the damage classes, priority zones and map. Undamaged pairs remain
+    selectable, just not first.
     """
-    pairs: list[dict[str, str]] = []
+    ranked: list[tuple[int, str, dict[str, str]]] = []
     seen_ids: set[str] = set()
 
     for images_dir in _demo_search_dirs():
@@ -91,16 +125,22 @@ def list_demo_pairs() -> list[dict[str, str]]:
 
             seen_ids.add(base)
 
-            pairs.append(
-                {
-                    "id": base,
-                    "disaster_type": _infer_disaster_type(base),
-                    "pre_image": pre.name,
-                    "post_image": post.name,
-                }
+            ranked.append(
+                (
+                    _demo_damage_rank(post),
+                    base,
+                    {
+                        "id": base,
+                        "disaster_type": _infer_disaster_type(base),
+                        "pre_image": pre.name,
+                        "post_image": post.name,
+                    },
+                )
             )
 
-    return pairs
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+
+    return [pair for _damage, _base, pair in ranked]
 
 
 def resolve_demo_pair(pair_id: str) -> dict[str, Path | str]:

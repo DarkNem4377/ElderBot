@@ -264,3 +264,30 @@ def test_list_demo_pairs_excludes_uploads(tmp_path, monkeypatch):
     monkeypatch.setattr(inference.settings, "upload_dir", uploads)
 
     assert inference.list_demo_pairs() == []
+
+
+def test_list_demo_pairs_ranks_damaged_first(tmp_path, monkeypatch):
+    """The dashboard defaults to the first pair, so it must not be an undamaged one.
+
+    Several real xBD scenes contain no damage at all. Alphabetical order put one
+    of them first, making the default analysis return an all-zero result.
+    """
+    demo = tmp_path / "demo"
+    images = demo / "images"
+    targets = demo / "targets"
+    images.mkdir(parents=True)
+    targets.mkdir(parents=True)
+
+    monkeypatch.setattr(inference.settings, "demo_data_dir", demo)
+    monkeypatch.setattr(inference.settings, "test_data_dir", tmp_path / "missing")
+
+    # "aaa" sorts first alphabetically but is entirely undamaged (class 1);
+    # "zzz" is destroyed (class 4) and is the only pair worth defaulting to.
+    for base, target_class in (("aaa-quake_00000001", 1), ("zzz-quake_00000002", 4)):
+        _write_png(images / f"{base}_pre_disaster.png")
+        _write_png(images / f"{base}_post_disaster.png")
+        _write_png(targets / f"{base}_post_disaster_target.png", value=target_class)
+
+    ids = [p["id"] for p in inference.list_demo_pairs()]
+
+    assert ids == ["zzz-quake_00000002", "aaa-quake_00000001"]
