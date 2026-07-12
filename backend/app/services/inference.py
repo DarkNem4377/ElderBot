@@ -12,7 +12,6 @@ Important:
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from functools import lru_cache
@@ -342,10 +341,18 @@ def _diff_mask(pre_image_path: Path, post_image_path: Path, out_path: Path) -> P
 
 
 def _make_stub_mask(pre_image_path: Path, post_image_path: Path, out_dir: Path) -> tuple[Path, str]:
-    """Produce a damage mask without a trained model.
+    """Produce a damage mask without a trained model, from the imagery alone.
 
-    Prefers the xBD ground-truth target shipped with a demo pair; falls back to
-    a pre/post difference heuristic for uploads and any pair missing labels.
+    Every input takes the same path — a pre/post difference heuristic — whether
+    it is a shipped demo pair or an image a stranger just uploaded.
+
+    This used to short-circuit: when a demo pair had an xBD ground-truth target
+    in data/demo/targets/, that label file was copied out verbatim and returned
+    as the "prediction". The demo pairs then scored perfectly and unseen uploads
+    fell off a cliff, because the demo was reciting an answer key rather than
+    inferring anything. Do not reintroduce that. The targets remain in the repo
+    for ranking (see _demo_damage_rank) and offline evaluation — never as model
+    output served to a user.
 
     Pixel values match the xView2 scheme used by scoring.py:
         0 = background (no building)
@@ -356,11 +363,6 @@ def _make_stub_mask(pre_image_path: Path, post_image_path: Path, out_dir: Path) 
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     mask_path = out_dir / "damage_mask.png"
-
-    target = resolve_demo_target(post_image_path)
-    if target is not None:
-        shutil.copy2(target, mask_path)
-        return mask_path, "stub-groundtruth"
 
     return _diff_mask(pre_image_path, post_image_path, mask_path), "stub-heuristic"
 

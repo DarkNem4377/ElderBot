@@ -39,6 +39,18 @@ SECTION_KEYS = {
 }
 
 
+def _expand(value: object) -> object:
+    """Expand ${VAR} in config values.
+
+    The AMD notebook has no fixed mount to hardcode (unlike Kaggle's /kaggle),
+    so config_subset_amd.yaml writes its paths relative to ${WORK_ROOT}.
+    Non-string values (epochs, batch size) pass through untouched.
+    """
+    if isinstance(value, str):
+        return os.path.expandvars(value)
+    return value
+
+
 def resolve_config(explicit: Path | None = None) -> Path:
     if explicit is not None:
         return explicit
@@ -63,9 +75,9 @@ def main() -> None:
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if args.section == "data":
         data = cfg.get("data", {})
-        print(f'export DATA_DIR="{data.get("train_dir", "/data/train_subset")}"')
-        print(f'export TEST_DIR="{data.get("test_dir", "/data/test")}"')
-        print(f'export RESULTS_ROOT="{data.get("results_root", "/results")}"')
+        print(f'export DATA_DIR="{_expand(data.get("train_dir", "/data/train_subset"))}"')
+        print(f'export TEST_DIR="{_expand(data.get("test_dir", "/data/test"))}"')
+        print(f'export RESULTS_ROOT="{_expand(data.get("results_root", "/results"))}"')
         return
 
     section = cfg.get(args.section, {})
@@ -75,7 +87,7 @@ def main() -> None:
             # Respect caller overrides (e.g. CKPT_PRE=last.ckpt on Kaggle)
             if env_key in os.environ and os.environ[env_key]:
                 continue
-            print(f'export {env_key}="{val}"')
+            print(f'export {env_key}="{_expand(val)}"')
 
 
 if __name__ == "__main__":

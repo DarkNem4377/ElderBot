@@ -15,7 +15,13 @@ def _write_png(path: Path, value: int = 0, size: tuple[int, int] = (32, 32)) -> 
     return path
 
 
-def test_stub_prefers_ground_truth_target(tmp_path, monkeypatch):
+def test_stub_never_serves_the_ground_truth_target(tmp_path, monkeypatch):
+    """A pair that ships an xBD label must still be *inferred*, not recited.
+
+    Copying the target out as the prediction made demo pairs score perfectly
+    while unseen uploads fell back to the heuristic — an answer key, not a
+    model. The labels stay in the repo for ranking and offline evaluation only.
+    """
     demo = tmp_path / "demo"
     (demo / "targets").mkdir(parents=True)
     monkeypatch.setattr(inference.settings, "demo_data_dir", demo)
@@ -29,9 +35,12 @@ def test_stub_prefers_ground_truth_target(tmp_path, monkeypatch):
 
     mask_path, mode, confidence = inference.run_inference(pre, post, tmp_path / "out")
 
-    assert mode == "stub-groundtruth"
+    assert mode == "stub-heuristic"
     assert confidence is None
-    assert np.array_equal(np.array(Image.open(mask_path)), np.array(Image.open(target)))
+    mask = np.array(Image.open(mask_path))
+    assert not np.array_equal(mask, np.array(Image.open(target)))
+    # Class 1 only exists in the label file; the heuristic cannot emit it.
+    assert set(np.unique(mask)) <= {0, 2, 3, 4}
 
 
 def test_stub_falls_back_to_diff_heuristic(tmp_path, monkeypatch):
