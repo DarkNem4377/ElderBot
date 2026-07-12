@@ -70,7 +70,7 @@ function getFriendlyError(error: unknown) {
   // AbortSignal.timeout rejects with a TimeoutError DOMException, whose message
   // ("signal timed out") means nothing to a coordinator staring at the screen.
   if (error instanceof DOMException && error.name === "TimeoutError") {
-    return "The backend did not respond in time. In docker inference mode a single pair can take about two minutes — check that the container is running.";
+    return "The analysis server took too long to respond. Large image pairs can take a couple of minutes — wait a moment, then try again.";
   }
 
   const message = error instanceof Error ? error.message : String(error);
@@ -79,7 +79,7 @@ function getFriendlyError(error: unknown) {
     message.toLowerCase().includes("failed to fetch") ||
     message.toLowerCase().includes("networkerror")
   ) {
-    return "Backend is offline. Start the FastAPI server, then refresh the dashboard.";
+    return "Could not reach the analysis server. It may still be waking up — this can take up to a minute on first use.";
   }
 
   return message;
@@ -701,7 +701,7 @@ export default function HomePage() {
 
     if (backendOffline) {
       setError(
-        "Backend is offline. Start the FastAPI server before loading demo imagery."
+        "The analysis server is not reachable yet. It may still be waking up — try again in a moment."
       );
       return;
     }
@@ -747,7 +747,7 @@ export default function HomePage() {
         }
       } else if (backendOffline) {
         throw new Error(
-          "Backend is offline. Start the FastAPI server before loading demo imagery."
+          "The analysis server is not reachable yet. It may still be waking up — try again in a moment."
         );
       } else {
         throw new Error("Select a demo pair or upload before/after images.");
