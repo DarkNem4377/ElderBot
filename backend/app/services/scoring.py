@@ -27,13 +27,15 @@ CLASS_NAMES = {
     4: "destroyed",
 }
 
-# Overlay colors (RGBA) for frontend legend
+# Overlay colors (RGBA). These must stay in step with the dashboard's damage
+# legend, the summary cards and the zone canvas — the overlay is read against
+# that legend, so a colour that disagrees with it is simply wrong.
 OVERLAY_COLORS = {
     0: (0, 0, 0, 0),
-    1: (34, 197, 94, 120),    # green - no damage
-    2: (59, 130, 246, 140),   # blue - minor
-    3: (249, 115, 22, 160),   # orange - major
-    4: (239, 68, 68, 180),    # red - destroyed
+    1: (34, 197, 94, 120),    # green  - no damage  (tailwind green-500)
+    2: (234, 179, 8, 140),    # yellow - minor      (tailwind yellow-500)
+    3: (249, 115, 22, 160),   # orange - major      (tailwind orange-500)
+    4: (239, 68, 68, 180),    # red    - destroyed  (tailwind red-500)
 }
 
 # Undamaged buildings carry no weight — they must not raise a zone's priority.
