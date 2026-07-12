@@ -5,7 +5,7 @@
 <h1 align="center"> DisasterIQ</h1>
 
 <p align="center">
-  <strong>SEE DAMAGE. PRIORITIZE RELIEF. SAVE LIVES..</strong>
+  <strong>SEE DAMAGE. PRIORITIZE RELIEF. SAVE LIVES.</strong>
 </p>
 
 <p align="center">
