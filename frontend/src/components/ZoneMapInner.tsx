@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CircleMarker,
   ImageOverlay,
+  LayersControl,
   MapContainer,
   Popup,
   TileLayer,
@@ -16,6 +17,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { AnalysisResult, Zone } from "@/lib/api";
+import { formatLatLng, googleEarthUrl, googleMapsUrl } from "@/lib/geo";
 
 interface Props {
   analysis: AnalysisResult;
@@ -31,6 +33,22 @@ function rankColor(rank: number) {
   return "#22c55e";
 }
 
+/*
+  Satellite imagery is the default basemap: this is a damage-assessment tool, and
+  a road map shows none of the rooftops, terrain or flooding a coordinator is
+  actually looking for. Esri's World Imagery is free and needs no API key. Street
+  tiles stay available as an alternate layer for route planning.
+*/
+const ESRI_IMAGERY_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const ESRI_IMAGERY_ATTRIBUTION =
+  'Imagery &copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics';
+
+// World Imagery ships no place names; this transparent overlay adds roads and
+// labels on top so the scene stays navigable.
+const ESRI_LABELS_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
+
 function FitImageBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
   const map = useMap();
   useEffect(() => {
@@ -42,9 +60,7 @@ function FitImageBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
 function zoneMarkers(geoZones: GeoZone[], imageMode: boolean) {
   return geoZones.map((zone) => {
     // Image mode stores pixel (x,y) as (lng, lat) = (x, y).
-    const center: [number, number] = imageMode
-      ? [zone.centroid_lat, zone.centroid_lng]
-      : [zone.centroid_lat, zone.centroid_lng];
+    const center: [number, number] = [zone.centroid_lat, zone.centroid_lng];
 
     return (
       <CircleMarker
@@ -66,15 +82,38 @@ function zoneMarkers(geoZones: GeoZone[], imageMode: boolean) {
               {zone.building_counts.major} buildings
             </p>
             <p>Priority score: {zone.priority_score}</p>
+
             {imageMode ? (
+              // No georeference, so these are image pixels, not a place on Earth.
+              // Linking them to Google Maps would point at latitude 512.
               <p>
                 Pixel: ({Math.round(zone.centroid_lng)},{" "}
                 {Math.round(zone.centroid_lat)})
               </p>
             ) : (
-              <p>
-                {zone.centroid_lat.toFixed(5)}, {zone.centroid_lng.toFixed(5)}
-              </p>
+              <>
+                <p className="mt-1 font-mono">
+                  {formatLatLng(zone.centroid_lat, zone.centroid_lng)}
+                </p>
+
+                <p className="mt-1">
+                  <a
+                    href={googleMapsUrl(zone.centroid_lat, zone.centroid_lng)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Google Maps
+                  </a>
+                  {" · "}
+                  <a
+                    href={googleEarthUrl(zone.centroid_lat, zone.centroid_lng)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Google Earth
+                  </a>
+                </p>
+              </>
             )}
           </div>
         </Popup>
@@ -171,10 +210,27 @@ export default function ZoneMapInner({ analysis, postImageUrl }: Props) {
       scrollWheelZoom={false}
       className="h-full w-full"
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <LayersControl position="topright">
+        <LayersControl.BaseLayer checked name="Satellite">
+          <TileLayer
+            attribution={ESRI_IMAGERY_ATTRIBUTION}
+            url={ESRI_IMAGERY_URL}
+            maxZoom={19}
+          />
+        </LayersControl.BaseLayer>
+
+        <LayersControl.BaseLayer name="Street">
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+        </LayersControl.BaseLayer>
+
+        <LayersControl.Overlay checked name="Place labels">
+          <TileLayer url={ESRI_LABELS_URL} maxZoom={19} />
+        </LayersControl.Overlay>
+      </LayersControl>
+
       {zoneMarkers(geoZones, false)}
     </MapContainer>
   );

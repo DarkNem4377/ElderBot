@@ -3,7 +3,8 @@
 "use client";
 
 import { useState } from "react";
-import type { AnalysisResult } from "@/lib/api";
+import type { AnalysisResult, Zone } from "@/lib/api";
+import { formatLatLngCompact, googleMapsUrl } from "@/lib/geo";
 
 interface Props {
   analysis: AnalysisResult | null;
@@ -58,6 +59,24 @@ function EmptyPriorityZones() {
       </div>
     </div>
   );
+}
+
+type GeoZone = Zone & { centroid_lat: number; centroid_lng: number };
+
+/* Uploads carry no xBD labels, so their zones have no coordinates to link to. */
+function hasCoords(zone: Zone): zone is GeoZone {
+  return (
+    typeof zone.centroid_lat === "number" && typeof zone.centroid_lng === "number"
+  );
+}
+
+/*
+  Only a wgs84 fit yields real ground coordinates. In image mode the map falls
+  back to pixel space, and a pixel centroid handed to Google Maps would point at
+  latitude 512 — so link nothing unless the analysis is genuinely georeferenced.
+*/
+function isGeoreferenced(analysis: AnalysisResult): boolean {
+  return analysis.geo_available && analysis.geo_mode !== "image";
 }
 
 type PriorityLevel = "high" | "medium" | "low";
@@ -118,6 +137,7 @@ export default function ZoneTable({ analysis }: Props) {
   }
 
   const rankedZones = [...analysis.zones].sort((a, b) => a.rank - b.rank);
+  const geoLinks = isGeoreferenced(analysis);
   const hasMore = rankedZones.length > COLLAPSED_COUNT;
   const displayZones =
     showAll || !hasMore ? rankedZones : rankedZones.slice(0, COLLAPSED_COUNT);
@@ -195,6 +215,27 @@ export default function ZoneTable({ analysis }: Props) {
                         />
                       </div>
                     </div>
+
+                    {geoLinks && hasCoords(zone) && (
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        {/* Full pair, never truncated — half a coordinate is
+                            useless to whoever is driving to it. */}
+                        <span className="whitespace-nowrap font-mono text-[10px] tabular-nums text-slate-500">
+                          {formatLatLngCompact(zone.centroid_lat, zone.centroid_lng)}
+                        </span>
+
+                        <a
+                          href={googleMapsUrl(zone.centroid_lat, zone.centroid_lng)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Open zone ${zone.rank} in Google Maps`}
+                          aria-label={`Open zone ${zone.rank} in Google Maps`}
+                          className="shrink-0 rounded border border-blue-500/30 bg-blue-950/30 px-1.5 py-1 text-[10px] font-bold leading-none text-blue-300 transition hover:border-blue-400/60 hover:bg-blue-900/40"
+                        >
+                          Maps ↗
+                        </a>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex justify-end">
