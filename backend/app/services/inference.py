@@ -25,7 +25,7 @@ from scipy import ndimage
 from app.config import settings
 
 DOCKER_TIMEOUT_SECONDS = 600
-PYTORCH_TIMEOUT_SECONDS = 600
+PYTORCH_TIMEOUT_SECONDS = 1800
 
 # Pixels differing by less than this are lighting/registration noise, never damage.
 MIN_DIFF_THRESHOLD = 15.0
