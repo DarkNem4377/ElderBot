@@ -276,7 +276,7 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests/ -v
 python -m pytest ml/pytorch-inference/tests/ -v
 
 # Frontend
-cd frontend; npm run typecheck; npm run build
+cd frontend; npm run typecheck; npm run lint; npm run build
 ```
 
 CI runs all of the above on every push and pull request

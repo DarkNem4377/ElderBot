@@ -3,9 +3,14 @@
 Two free services: **backend on Render**, **frontend on Vercel**. Deploy the
 backend first so you have its URL for the frontend.
 
-> Note: real ML damage detection needs a GPU (added later). The deployed backend
-> runs in **stub mode** for now — the UI, live Fireworks AI briefs, and PDF
-> export all work; damage masks are placeholders until the model port.
+> Note: real ML inference needs a GPU (added later), so the deployed backend runs
+> in **stub mode**. That is not a placeholder for the demo pairs: each ships its
+> xBD ground-truth damage mask, which stub mode serves directly (the API reports
+> `stub-groundtruth`). Zone ranking, the overlay, live Fireworks AI briefs and
+> PDF export are all real. What stub mode does *not* do is predict damage on
+> imagery it has never seen — an uploaded pair with no ground truth falls back to
+> a pre/post change-detection heuristic. See the inference-mode table in the
+> [README](README.md#inference-modes).
 
 ---
 
@@ -22,8 +27,9 @@ backend first so you have its URL for the frontend.
 6. Verify: open `https://<your-backend>.onrender.com/health` → should return
    `{"status":"ok","inference_mode":"stub",...}`.
 
-> Free tier note: the service sleeps after ~15 min idle; the first request after
-> that takes ~30–60s to wake. Fine for a demo.
+> Free tier note: the service sleeps after ~15 min idle and takes ~30–60s to wake.
+> The dashboard handles this — it shows a "Waking backend" state and keeps
+> retrying until the backend answers, rather than reporting it as offline.
 
 ## 2. Frontend → Vercel
 
